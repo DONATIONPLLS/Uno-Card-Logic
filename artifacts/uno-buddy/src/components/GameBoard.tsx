@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   chooseBotMove,
   chooseBotSwapTarget,
-  describe,
   drawOne,
   endTurn,
   hasPlayableCard,
@@ -11,6 +10,7 @@ import {
   playCard,
   resolveSwap,
   type GameState,
+  type UnoCard,
   type UnoColor,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
@@ -24,6 +24,14 @@ const colorSwatch: Record<UnoColor, string> = {
   green: "bg-[hsl(140_70%_38%)]",
   blue: "bg-[hsl(215_85%_45%)]",
 };
+
+type SeatPos = "top" | "left" | "right";
+
+function seatLayout(n: number): SeatPos[] {
+  if (n === 2) return ["top"];
+  if (n === 3) return ["left", "right"];
+  return ["left", "top", "right"];
+}
 
 export function GameBoard({
   game,
@@ -44,21 +52,55 @@ export function GameBoard({
   const prevTurnRef = useRef<{ idx: number; kind: "human" | "bot" } | null>(null);
   const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
   const wonRef = useRef(false);
+  const [announcement, setAnnouncement] = useState<string | null>(null);
+  const lastTopRef = useRef<UnoCard | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
   const isHumanTurn = currentPlayer?.kind === "human" && game.winner === null;
   const top = game.discardPile[game.discardPile.length - 1];
 
-  // Win sound (once)
+  // Win sound
   useEffect(() => {
     if (game.winner !== null && !wonRef.current) {
       wonRef.current = true;
       sfx.win();
+      setAnnouncement(`🎉 ${nameOf(game.players[game.winner])} WINS!`);
+      const t = setTimeout(() => setAnnouncement(null), 2400);
+      return () => clearTimeout(t);
     }
-  }, [game.winner]);
+    return undefined;
+  }, [game.winner, game.players]);
 
-  // Turn change handling: privacy overlay logic + reset
+  // Action announcements (driven by changes to discard top)
+  useEffect(() => {
+    const prev = lastTopRef.current;
+    lastTopRef.current = top;
+    if (!prev || prev.id === top.id) return;
+    let msg: string | null = null;
+    switch (top.value) {
+      case "skip": msg = "SKIPPED!"; break;
+      case "reverse": msg = "REVERSE!"; break;
+      case "draw2": msg = "+2 DRAW!"; break;
+      case "wild4": msg = "+4 WILD!"; break;
+      case "wild": msg = "WILD!"; break;
+      case "0":
+        if (game.houseRules.sevenZero) msg = "ALL PASS!";
+        break;
+      case "7":
+        if (game.houseRules.sevenZero) msg = "SWAP!";
+        break;
+    }
+    if (msg) {
+      setAnnouncement(msg);
+      const t = setTimeout(() => setAnnouncement(null), 1100);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [top, game.houseRules.sevenZero]);
+
+  // Turn change handling: privacy overlay + reset
   useEffect(() => {
     const prev = prevTurnRef.current;
     const cur = { idx: currentIdx, kind: currentPlayer?.kind ?? "human" };
@@ -74,26 +116,20 @@ export function GameBoard({
       setOverlayKind(null);
       return;
     }
-
     if (cur.kind === "bot") {
-      // No privacy for bot turns — reveal table immediately
       setRevealed(true);
       setOverlayKind(null);
       return;
     }
-    // Human turn
     setRevealed(false);
-    if (!prev) {
-      setOverlayKind("pass"); // start of game
-    } else if (prev.kind === "bot") {
+    if (!prev) setOverlayKind("pass");
+    else if (prev.kind === "bot") {
       setOverlayKind("yourturn");
       sfx.ding();
-    } else {
-      setOverlayKind("pass");
-    }
+    } else setOverlayKind("pass");
   }, [currentIdx, currentPlayer?.kind, game.winner]);
 
-  // Bot turn loop
+  // Bot loop
   useEffect(() => {
     if (game.winner !== null) return;
     if (game.pendingAction?.type === "swap7") {
@@ -127,7 +163,7 @@ export function GameBoard({
         if (newCard && isValidMove(newCard, afterDraw.discardPile[afterDraw.discardPile.length - 1], afterDraw.activeColor, afterDraw.pendingDraw, afterDraw.houseRules)) {
           const followUp = chooseBotMove(afterDraw, idx);
           if (followUp.type === "play") {
-            setTimeout(() => sfx.swish(), 300);
+            setTimeout(() => sfx.swish(), 280);
             return playCard(afterDraw, idx, followUp.cardId, followUp.chosenColor);
           }
         }
@@ -136,6 +172,13 @@ export function GameBoard({
     }, 850);
     return () => clearTimeout(t);
   }, [game.currentPlayer, game.winner, game.pendingAction, currentPlayer, setGame]);
+
+  // Edge-clip fix: whenever a card becomes selected, scroll it into view
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = cardRefs.current[selectedId];
+    if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [selectedId]);
 
   const onCardTap = (cardId: string) => {
     if (!isHumanTurn || !revealed) return;
@@ -216,13 +259,27 @@ export function GameBoard({
   const playableExists = isHumanTurn && hasPlayableCard(game, currentIdx);
   const canPass = isHumanTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
 
-  const opponents = game.hands
-    .map((h, i) => ({ hand: h, player: game.players[i], idx: i }))
-    .filter((o) => o.idx !== currentIdx);
+  // Map opponents to seats
+  const otherIdxs = game.players
+    .map((_, i) => i)
+    .filter((i) => i !== currentIdx);
+  const positions = seatLayout(game.players.length);
+  const seated: { pos: SeatPos; idx: number }[] = otherIdxs.map((idx, i) => ({
+    pos: positions[i] ?? "top",
+    idx,
+  }));
+
+  const seatAt = (pos: SeatPos) => seated.find((s) => s.pos === pos);
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-gradient-to-b from-neutral-900 to-neutral-800 text-white animate-[fadeIn_.2s_ease-out]">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/30">
+    <div
+      className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.2s_ease-out]"
+      style={{
+        background:
+          "radial-gradient(ellipse at center, hsl(140 60% 18%) 0%, hsl(140 60% 10%) 55%, #000 100%)",
+      }}
+    >
+      <header className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-black/40 z-10">
         <button
           onClick={onExit}
           className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center"
@@ -231,20 +288,17 @@ export function GameBoard({
           ←
         </button>
         <div className="flex items-center gap-2 min-w-0">
-          <Avatar
-            name={currentPlayer?.name ?? "?"}
-            idx={currentIdx}
-            kind={currentPlayer?.kind ?? "human"}
-            size="sm"
-            glow
-          />
-          <div className="min-w-0">
-            <div className="text-xs text-white/50 leading-tight">Now playing</div>
-            <div className="text-sm font-bold truncate">
-              {currentPlayer?.name}
-              {currentPlayer?.kind === "bot" ? " (AI)" : ""}
-            </div>
+          <div className="text-xs text-white/50">Now playing:</div>
+          <div className="text-sm font-bold truncate">
+            {currentPlayer?.name}
+            {currentPlayer?.kind === "bot" ? " (AI)" : ""}
           </div>
+          <span className={`w-3 h-3 rounded-full ${colorSwatch[game.activeColor]} border border-white/40 ml-1`} />
+          {game.pendingDraw > 0 ? (
+            <span className="ml-2 px-2 py-0.5 rounded bg-red-500/40 text-red-50 text-[10px] font-bold">
+              +{game.pendingDraw}
+            </span>
+          ) : null}
         </div>
         <button
           onClick={() => setShowRules(true)}
@@ -255,40 +309,53 @@ export function GameBoard({
         </button>
       </header>
 
-      {/* Opponents */}
-      <div className="px-4 pt-3 space-y-2">
-        {opponents.map((o) => (
-          <div key={o.idx} className="flex items-center gap-2">
-            <Avatar
-              name={o.player.name}
-              idx={o.idx}
-              kind={o.player.kind}
-              size="sm"
-            />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-white/70 truncate">
-                {o.player.name}
-                {o.player.kind === "bot" ? " (AI)" : ""} · {o.hand.length} cards
-              </div>
-              <div className="flex gap-0.5 overflow-x-auto pb-0.5">
-                {o.hand.map((c) => (
-                  <UnoCardView key={c.id} card={c} small faceDown />
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Table */}
-      <div
-        className="flex-1 flex flex-col items-center justify-center gap-3 px-4 py-4"
-        onClick={() => {
-          setSelectedId(null);
-          setDrawArmed(false);
-        }}
-      >
-        <div className="flex items-center gap-6">
+      <div className="flex-1 grid relative" style={tableGridStyle}>
+        {/* Top seat */}
+        <div className="row-start-1 col-start-2 flex items-start justify-center pt-2">
+          {seatAt("top") ? (
+            <SeatView
+              orientation="horizontal"
+              hand={game.hands[seatAt("top")!.idx]}
+              player={game.players[seatAt("top")!.idx]}
+              idx={seatAt("top")!.idx}
+              active={currentIdx === seatAt("top")!.idx}
+            />
+          ) : null}
+        </div>
+        {/* Left seat */}
+        <div className="row-start-2 col-start-1 flex items-center justify-start pl-1">
+          {seatAt("left") ? (
+            <SeatView
+              orientation="vertical"
+              hand={game.hands[seatAt("left")!.idx]}
+              player={game.players[seatAt("left")!.idx]}
+              idx={seatAt("left")!.idx}
+              active={currentIdx === seatAt("left")!.idx}
+            />
+          ) : null}
+        </div>
+        {/* Right seat */}
+        <div className="row-start-2 col-start-3 flex items-center justify-end pr-1">
+          {seatAt("right") ? (
+            <SeatView
+              orientation="vertical"
+              hand={game.hands[seatAt("right")!.idx]}
+              player={game.players[seatAt("right")!.idx]}
+              idx={seatAt("right")!.idx}
+              active={currentIdx === seatAt("right")!.idx}
+            />
+          ) : null}
+        </div>
+
+        {/* Center piles */}
+        <div
+          className="row-start-2 col-start-2 flex items-center justify-center gap-4"
+          onClick={() => {
+            setSelectedId(null);
+            setDrawArmed(false);
+          }}
+        >
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -298,52 +365,41 @@ export function GameBoard({
             className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
               isHumanTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null
                 ? "active:scale-95"
-                : "opacity-60"
+                : "opacity-70"
             } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
           >
-            <UnoCardView card={{ id: "back", color: "wild", value: "wild" }} faceDown />
-            <span className="text-xs text-white/70">
-              {hasDrawnThisTurn
-                ? "Drew"
-                : drawArmed
-                ? "Tap again to draw"
-                : "Tap to draw"}{" "}
-              ({game.drawPile.length})
+            <UnoCardView card={{ id: "back", color: "wild", value: "wild" }} faceDown size="md" />
+            <span className="text-[10px] text-white/70">
+              {hasDrawnThisTurn ? "Drew" : drawArmed ? "Tap again" : "Draw"} ({game.drawPile.length})
             </span>
           </button>
           <div className="flex flex-col items-center gap-1">
             <div key={top.id} className="animate-[flyIn_.35s_ease-out]">
-              <UnoCardView card={top} disabled />
+              <UnoCardView card={top} disabled size="md" />
             </div>
-            <span className="text-xs text-white/60">Top</span>
+            <span className="text-[10px] text-white/60">Top</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-white/60">Active:</span>
-          <span className={`w-5 h-5 rounded-full ${colorSwatch[game.activeColor]} border border-white/40`} />
-          <span className="capitalize">{game.activeColor}</span>
-          {game.pendingDraw > 0 ? (
-            <span className="ml-3 px-2 py-0.5 rounded bg-red-500/30 text-red-100 text-xs font-bold">
-              +{game.pendingDraw} pending
-            </span>
-          ) : null}
-        </div>
-        {game.winner !== null ? (
-          <div className="text-2xl font-black text-center mt-2">
-            🎉 {nameOf(game.players[game.winner])} wins!
+
+        {/* Action overlay */}
+        {announcement ? (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+            <div className="px-8 py-4 rounded-2xl bg-black/80 border-4 border-white text-3xl sm:text-5xl font-black tracking-wider text-white animate-[popIn_.25s_ease-out] shadow-2xl">
+              {announcement}
+            </div>
           </div>
         ) : null}
       </div>
 
       {/* Game Log */}
-      <div className="mx-4 mb-3 max-h-20 overflow-y-auto rounded-md bg-black/40 border border-white/10 px-3 py-2 text-xs text-white/80 space-y-0.5">
-        {game.log.slice(0, 5).map((line, i) => (
+      <div className="mx-3 mb-2 max-h-14 overflow-y-auto rounded-md bg-black/40 border border-white/10 px-3 py-1.5 text-[11px] text-white/80 space-y-0.5 z-10">
+        {game.log.slice(0, 4).map((line, i) => (
           <div key={i}>{line}</div>
         ))}
       </div>
 
-      {/* Hand — overflow-visible vertically so a lifted card isn't clipped */}
-      <div className="border-t border-white/10 pt-2 pb-4 bg-black/30">
+      {/* Hand */}
+      <div className="border-t border-white/10 pt-2 pb-3 bg-black/50 z-10">
         <div className="flex items-center justify-between mb-1 px-3">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar
@@ -373,7 +429,7 @@ export function GameBoard({
             </button>
           ) : null}
         </div>
-        <div className="overflow-x-auto pt-8 px-3">
+        <div className="overflow-x-auto pt-10 px-3 scroll-smooth">
           <div className="flex gap-2 items-end pb-2">
             {myHand.map((c) => {
               const playable = isHumanTurn && isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
@@ -381,7 +437,8 @@ export function GameBoard({
               return (
                 <div
                   key={c.id}
-                  className={`shrink-0 transition-transform duration-150 ${selected ? "-translate-y-6" : ""}`}
+                  ref={(el) => { cardRefs.current[c.id] = el; }}
+                  className={`shrink-0 transition-transform duration-150 ${selected ? "-translate-y-8" : ""}`}
                   style={{ zIndex: selected ? 30 : 1, position: "relative" }}
                 >
                   <div className={`rounded-xl ${selected ? "ring-4 ring-white shadow-2xl" : ""}`}>
@@ -390,6 +447,7 @@ export function GameBoard({
                       onClick={() => onCardTap(c.id)}
                       disabled={!isHumanTurn || !revealed || (!playable && !selected)}
                       faceDown={!revealed && isHumanTurn}
+                      size="lg"
                     />
                   </div>
                 </div>
@@ -400,14 +458,8 @@ export function GameBoard({
             ) : null}
           </div>
         </div>
-        {selectedId && !canPass ? (
-          <div className="text-center text-xs text-white/60 px-1">
-            Tap the same card again to play, or tap anywhere to cancel.
-          </div>
-        ) : null}
       </div>
 
-      {/* Color picker */}
       {pickColorFor ? (
         <Modal onClose={() => setPickColorFor(null)} title="Choose a color">
           <div className="grid grid-cols-2 gap-3">
@@ -424,7 +476,6 @@ export function GameBoard({
         </Modal>
       ) : null}
 
-      {/* Swap picker */}
       {swapPickerFor !== null ? (
         <Modal title="Swap hands with…">
           <div className="space-y-2">
@@ -445,12 +496,10 @@ export function GameBoard({
         </Modal>
       ) : null}
 
-      {/* Privacy overlay */}
       {isHumanTurn && !revealed && overlayKind && game.winner === null ? (
         <PassOverlay
           name={currentPlayer.name}
           idx={currentIdx}
-          kind="human"
           variant={overlayKind}
           onReveal={() => {
             setRevealed(true);
@@ -465,16 +514,70 @@ export function GameBoard({
   );
 }
 
+const tableGridStyle: React.CSSProperties = {
+  gridTemplateColumns: "minmax(60px, 1fr) 3fr minmax(60px, 1fr)",
+  gridTemplateRows: "auto 1fr",
+  minHeight: "260px",
+};
+
+function SeatView({
+  orientation,
+  hand,
+  player,
+  idx,
+  active,
+}: {
+  orientation: "horizontal" | "vertical";
+  hand: UnoCard[];
+  player: { name: string; kind: "human" | "bot" };
+  idx: number;
+  active: boolean;
+}) {
+  // Show up to 7 fanned face-down cards; any extras are summarized
+  const shown = hand.slice(0, 7);
+  const extra = hand.length - shown.length;
+
+  return (
+    <div className={`flex ${orientation === "horizontal" ? "flex-col items-center gap-1" : "flex-col items-center gap-1"}`}>
+      <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" glow={active} />
+      <div className="text-[10px] text-white/70 text-center max-w-[80px] truncate">
+        {player.name}
+        {player.kind === "bot" ? " (AI)" : ""}
+        <div className="text-white/50">{hand.length}🂠</div>
+      </div>
+      <div
+        className={`flex ${orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"} items-center`}
+      >
+        {shown.map((c, i) => (
+          <div
+            key={c.id}
+            style={{
+              transform:
+                orientation === "horizontal"
+                  ? `rotate(${(i - shown.length / 2) * 4}deg)`
+                  : `rotate(90deg)`,
+              zIndex: i,
+            }}
+          >
+            <UnoCardView card={c} faceDown size="sm" />
+          </div>
+        ))}
+        {extra > 0 ? (
+          <div className="text-[10px] text-white/60 ml-1">+{extra}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function PassOverlay({
   name,
   idx,
-  kind,
   variant,
   onReveal,
 }: {
   name: string;
   idx: number;
-  kind: "human";
   variant: "pass" | "yourturn";
   onReveal: () => void;
 }) {
@@ -486,7 +589,7 @@ function PassOverlay({
   return (
     <div className="fixed inset-0 z-40 bg-gradient-to-br from-[hsl(0_60%_15%)] via-black to-black flex flex-col items-center justify-center px-6 text-center animate-[fadeIn_.2s_ease-out]">
       <div className="mb-4">
-        <Avatar name={name} idx={idx} kind={kind} size="lg" glow />
+        <Avatar name={name} idx={idx} kind="human" size="lg" glow />
       </div>
       <div className="text-xs uppercase tracking-widest text-white/50 font-bold mb-2">
         {variant === "yourturn" ? "Heads up" : "Pass the phone"}

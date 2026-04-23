@@ -106,6 +106,14 @@ function App() {
           60% { opacity: 1; }
           to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
         }
+        @keyframes popIn {
+          0% { opacity: 0; transform: scale(.5); }
+          70% { opacity: 1; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        .bg-gradient-radial {
+          background-image: radial-gradient(ellipse at center, var(--tw-gradient-from), var(--tw-gradient-via, transparent), var(--tw-gradient-to));
+        }
       `}</style>
     </div>
   );
