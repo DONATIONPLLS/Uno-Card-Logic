@@ -11,10 +11,33 @@ export interface UnoCard {
   value: CardValue;
 }
 
+export type PlayerKind = "human" | "bot";
+
+export interface PlayerConfig {
+  name: string;
+  kind: PlayerKind;
+}
+
+export interface HouseRules {
+  stackDraws: boolean;
+  jumpIn: boolean;
+  forcePlay: boolean;
+  drawUntilPlayable: boolean;
+}
+
+export const DEFAULT_HOUSE_RULES: HouseRules = {
+  stackDraws: true,
+  jumpIn: false,
+  forcePlay: false,
+  drawUntilPlayable: false,
+};
+
 export interface GameState {
   drawPile: UnoCard[];
   discardPile: UnoCard[];
   hands: UnoCard[][];
+  players: PlayerConfig[];
+  houseRules: HouseRules;
   currentPlayer: number;
   direction: 1 | -1;
   activeColor: UnoColor;
@@ -64,8 +87,10 @@ export function isValidMove(
   topCard: UnoCard,
   activeColor: UnoColor,
   pendingDraw: number,
+  rules: HouseRules,
 ): boolean {
   if (pendingDraw > 0) {
+    if (!rules.stackDraws) return false;
     if (topCard.value === "draw2" && card.value === "draw2") return true;
     if (topCard.value === "wild4" && card.value === "wild4") return true;
     return false;
@@ -76,25 +101,35 @@ export function isValidMove(
   return false;
 }
 
-export function dealNewGame(numPlayers: number): GameState {
+export interface NewGameOptions {
+  players: PlayerConfig[];
+  houseRules?: Partial<HouseRules>;
+}
+
+export function dealNewGame(opts: NewGameOptions): GameState {
+  const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
+  const players = opts.players;
   let deck = shuffle(buildDeck());
   const hands: UnoCard[][] = [];
-  for (let p = 0; p < numPlayers; p++) {
+  for (let p = 0; p < players.length; p++) {
     hands.push(deck.splice(0, 7));
   }
-  // first non-wild card to start
-  let firstIdx = deck.findIndex((c) => c.color !== "wild" && !["skip", "reverse", "draw2"].includes(c.value));
+  let firstIdx = deck.findIndex(
+    (c) => c.color !== "wild" && !["skip", "reverse", "draw2"].includes(c.value),
+  );
   if (firstIdx === -1) firstIdx = 0;
   const first = deck.splice(firstIdx, 1)[0];
   return {
     drawPile: deck,
     discardPile: [first],
     hands,
+    players,
+    houseRules,
     currentPlayer: 0,
     direction: 1,
     activeColor: first.color === "wild" ? "red" : (first.color as UnoColor),
     pendingDraw: 0,
-    log: [`Game started with ${numPlayers} players. Top card: ${describe(first)}.`],
+    log: [`Game started. Top card: ${describe(first)}.`],
     winner: null,
   };
 }
@@ -112,10 +147,11 @@ export function drawCards(state: GameState, playerIdx: number, n: number): GameS
   const s = cloneState(state);
   for (let i = 0; i < n; i++) {
     if (s.drawPile.length === 0) {
-      // reshuffle discards (keep top)
       const top = s.discardPile.pop()!;
       const reshuffled = shuffle(
-        s.discardPile.map((c) => (c.value === "wild" || c.value === "wild4" ? { ...c, color: "wild" as WildColor } : c)),
+        s.discardPile.map((c) =>
+          c.value === "wild" || c.value === "wild4" ? { ...c, color: "wild" as WildColor } : c,
+        ),
       );
       s.drawPile = reshuffled;
       s.discardPile = [top];
@@ -147,22 +183,22 @@ export function playCard(
   if (idx === -1) return s;
   const card = hand[idx];
   const top = s.discardPile[s.discardPile.length - 1];
-  if (!isValidMove(card, top, s.activeColor, s.pendingDraw)) return s;
+  if (!isValidMove(card, top, s.activeColor, s.pendingDraw, s.houseRules)) return s;
 
   hand.splice(idx, 1);
   s.discardPile.push(card);
-  s.log.unshift(`Player ${playerIdx + 1} played ${describe(card)}.`);
+  s.log.unshift(`${s.players[playerIdx].name} played ${describe(card)}.`);
 
   if (card.color !== "wild") {
     s.activeColor = card.color as UnoColor;
   } else {
     s.activeColor = chosenColor ?? "red";
-    s.log.unshift(`Player ${playerIdx + 1} chose ${s.activeColor}.`);
+    s.log.unshift(`${s.players[playerIdx].name} chose ${s.activeColor}.`);
   }
 
   if (hand.length === 0) {
     s.winner = playerIdx;
-    s.log.unshift(`Player ${playerIdx + 1} wins!`);
+    s.log.unshift(`${s.players[playerIdx].name} wins!`);
     return s;
   }
 
@@ -186,8 +222,9 @@ export function playCard(
   s.currentPlayer = nextPlayer(s, skipNext);
 
   if (s.pendingDraw > 0 && !canStack(s)) {
-    s = drawCards(s, s.currentPlayer, s.pendingDraw);
-    s.log.unshift(`Player ${s.currentPlayer + 1} drew ${s.pendingDraw} cards.`);
+    const target = s.currentPlayer;
+    s = drawCards(s, target, s.pendingDraw);
+    s.log.unshift(`${s.players[target].name} drew ${s.pendingDraw} cards.`);
     s.pendingDraw = 0;
     s.currentPlayer = nextPlayer(s);
   }
@@ -196,9 +233,10 @@ export function playCard(
 }
 
 function canStack(state: GameState): boolean {
+  if (!state.houseRules.stackDraws) return false;
   const top = state.discardPile[state.discardPile.length - 1];
   const hand = state.hands[state.currentPlayer];
-  return hand.some((c) => isValidMove(c, top, state.activeColor, state.pendingDraw));
+  return hand.some((c) => isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules));
 }
 
 export function drawTurn(state: GameState, playerIdx: number): GameState {
@@ -207,10 +245,28 @@ export function drawTurn(state: GameState, playerIdx: number): GameState {
   if (playerIdx !== s.currentPlayer) return s;
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
-  s.log.unshift(`Player ${playerIdx + 1} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
+  s.log.unshift(`${s.players[playerIdx].name} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
   s.pendingDraw = 0;
   s.currentPlayer = nextPlayer(s);
   return s;
+}
+
+export function jumpIn(state: GameState, playerIdx: number, cardId: string): GameState {
+  if (!state.houseRules.jumpIn) return state;
+  if (state.winner !== null) return state;
+  if (playerIdx === state.currentPlayer) return state;
+  const hand = state.hands[playerIdx];
+  const card = hand.find((c) => c.id === cardId);
+  if (!card) return state;
+  const top = state.discardPile[state.discardPile.length - 1];
+  if (state.pendingDraw > 0) return state;
+  if (card.color === top.color && card.value === top.value && card.color !== "wild") {
+    const s = cloneState(state);
+    s.currentPlayer = playerIdx;
+    s.log.unshift(`${s.players[playerIdx].name} jumped in!`);
+    return playCard(s, playerIdx, cardId);
+  }
+  return state;
 }
 
 function cloneState(s: GameState): GameState {
@@ -218,6 +274,8 @@ function cloneState(s: GameState): GameState {
     drawPile: [...s.drawPile],
     discardPile: [...s.discardPile],
     hands: s.hands.map((h) => [...h]),
+    players: s.players.map((p) => ({ ...p })),
+    houseRules: { ...s.houseRules },
     currentPlayer: s.currentPlayer,
     direction: s.direction,
     activeColor: s.activeColor,

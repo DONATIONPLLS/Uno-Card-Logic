@@ -1,4 +1,4 @@
-const CACHE = "uno-buddy-v1";
+const CACHE = "uno-buddy-v2";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", (e) => {
