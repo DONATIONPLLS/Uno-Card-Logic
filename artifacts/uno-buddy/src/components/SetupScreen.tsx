@@ -1,18 +1,32 @@
 import { useState } from "react";
 import {
-  DEFAULT_HOUSE_RULES,
+  MODE_PRESETS,
+  type GameMode,
   type HouseRules,
   type PlayerConfig,
   type PlayerKind,
 } from "@/lib/uno-engine";
 
+const MODE_LABEL: Record<GameMode, string> = {
+  standard: "Standard Uno",
+  chaos: "Chaos Mode",
+  flip: "Uno Flip",
+  allwild: "Uno All Wild",
+  custom: "Custom",
+};
+
 export function SetupScreen({
+  mode,
   onBack,
   onStart,
 }: {
+  mode: GameMode;
   onBack: () => void;
-  onStart: (players: PlayerConfig[], rules: HouseRules) => void;
+  onStart: (players: PlayerConfig[], rules: HouseRules, mode: GameMode) => void;
 }) {
+  const presetRules =
+    mode === "custom" ? MODE_PRESETS.standard : MODE_PRESETS[mode];
+
   const [count, setCount] = useState(2);
   const [players, setPlayers] = useState<PlayerConfig[]>([
     { name: "You", kind: "human" },
@@ -20,21 +34,21 @@ export function SetupScreen({
     { name: "UnoBot 2", kind: "bot" },
     { name: "UnoBot 3", kind: "bot" },
   ]);
-  const [rules, setRules] = useState<HouseRules>(DEFAULT_HOUSE_RULES);
+  const [rules, setRules] = useState<HouseRules>(presetRules);
 
-  const setKind = (i: number, kind: PlayerKind) => {
+  const setKind = (i: number, kind: PlayerKind) =>
     setPlayers((p) => p.map((pl, idx) => (idx === i ? { ...pl, kind } : pl)));
-  };
-  const setName = (i: number, name: string) => {
+  const setName = (i: number, name: string) =>
     setPlayers((p) => p.map((pl, idx) => (idx === i ? { ...pl, name } : pl)));
-  };
 
   const start = () => {
     const final = players.slice(0, count).map((p, i) => ({
       ...p,
-      name: p.name.trim() || (p.kind === "bot" ? `UnoBot ${i}` : `Player ${i + 1}`),
+      name:
+        p.name.trim() ||
+        (p.kind === "bot" ? `UnoBot ${i}` : `Player ${i + 1}`),
     }));
-    onStart(final, rules);
+    onStart(final, rules, mode);
   };
 
   return (
@@ -51,7 +65,13 @@ export function SetupScreen({
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 pb-32">
-        {/* Player count */}
+        <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+          <div className="text-xs uppercase tracking-wider text-white/50 font-semibold">
+            Mode
+          </div>
+          <div className="font-bold text-lg">{MODE_LABEL[mode]}</div>
+        </div>
+
         <section>
           <h2 className="text-xs uppercase tracking-wider text-white/50 mb-2 font-semibold">
             Players
@@ -73,7 +93,6 @@ export function SetupScreen({
           </div>
         </section>
 
-        {/* Players list */}
         <section className="space-y-2">
           {players.slice(0, count).map((p, i) => (
             <div
@@ -114,38 +133,58 @@ export function SetupScreen({
           ))}
         </section>
 
-        {/* House rules */}
-        <section>
-          <h2 className="text-xs uppercase tracking-wider text-white/50 mb-2 font-semibold">
-            House Rules
-          </h2>
-          <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/10">
-            <Toggle
-              label="Stacking +2 / +4"
-              hint="Pass the draw penalty to the next player by stacking"
-              value={rules.stackDraws}
-              onChange={(v) => setRules({ ...rules, stackDraws: v })}
-            />
-            <Toggle
-              label="Jump-in play"
-              hint="Play an identical card out of turn"
-              value={rules.jumpIn}
-              onChange={(v) => setRules({ ...rules, jumpIn: v })}
-            />
-            <Toggle
-              label="Force play after draw"
-              hint="Must play the drawn card if it's playable"
-              value={rules.forcePlay}
-              onChange={(v) => setRules({ ...rules, forcePlay: v })}
-            />
-            <Toggle
-              label="Draw until playable"
-              hint="Keep drawing until you get a playable card"
-              value={rules.drawUntilPlayable}
-              onChange={(v) => setRules({ ...rules, drawUntilPlayable: v })}
-            />
-          </div>
-        </section>
+        {mode === "custom" ? (
+          <section>
+            <h2 className="text-xs uppercase tracking-wider text-white/50 mb-2 font-semibold">
+              House Rules
+            </h2>
+            <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/10">
+              <Toggle
+                label="Stacking +2 / +4"
+                hint="Pass the draw penalty by stacking"
+                value={rules.stackDraws}
+                onChange={(v) => setRules({ ...rules, stackDraws: v })}
+              />
+              <Toggle
+                label="Jump-in play"
+                hint="Play an identical card out of turn"
+                value={rules.jumpIn}
+                onChange={(v) => setRules({ ...rules, jumpIn: v })}
+              />
+              <Toggle
+                label="Force play after draw"
+                hint="Must play the drawn card if it's playable"
+                value={rules.forcePlay}
+                onChange={(v) => setRules({ ...rules, forcePlay: v })}
+              />
+              <Toggle
+                label="7-0 hand swaps"
+                hint="Play 7: swap hands. Play 0: everyone passes."
+                value={rules.sevenZero}
+                onChange={(v) => setRules({ ...rules, sevenZero: v })}
+              />
+              <Toggle
+                label="All cards wild"
+                hint="Every card matches every card"
+                value={rules.allWild}
+                onChange={(v) => setRules({ ...rules, allWild: v })}
+              />
+            </div>
+          </section>
+        ) : (
+          <section>
+            <h2 className="text-xs uppercase tracking-wider text-white/50 mb-2 font-semibold">
+              Active Rules
+            </h2>
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-sm text-white/80 space-y-1">
+              <RuleRow on={rules.stackDraws} label="Stacking +2 / +4" />
+              <RuleRow on={rules.jumpIn} label="Jump-in play" />
+              <RuleRow on={rules.forcePlay} label="Force play after draw" />
+              <RuleRow on={rules.sevenZero} label="7-0 hand swaps" />
+              <RuleRow on={rules.allWild} label="All cards wild" />
+            </div>
+          </section>
+        )}
       </div>
 
       <div className="fixed bottom-0 inset-x-0 px-4 pb-5 pt-3 bg-gradient-to-t from-black via-black/95 to-transparent">
@@ -156,6 +195,17 @@ export function SetupScreen({
           Start Game
         </button>
       </div>
+    </div>
+  );
+}
+
+function RuleRow({ on, label }: { on: boolean; label: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span>{label}</span>
+      <span className={`text-xs font-bold ${on ? "text-[hsl(140_70%_55%)]" : "text-white/40"}`}>
+        {on ? "ON" : "OFF"}
+      </span>
     </div>
   );
 }

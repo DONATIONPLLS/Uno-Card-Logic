@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 import {
   dealNewGame,
+  type GameMode,
   type GameState,
   type HouseRules,
   type PlayerConfig,
 } from "@/lib/uno-engine";
 import { MainMenu } from "@/components/MainMenu";
+import { ModeSelect } from "@/components/ModeSelect";
 import { SetupScreen } from "@/components/SetupScreen";
 import { GameBoard } from "@/components/GameBoard";
 import { RulesPanel } from "@/components/RulesPanel";
 
 const STORAGE_KEY = "uno-buddy:game";
 
-type Screen = "menu" | "setup" | "game" | "scoring";
+type Screen = "menu" | "mode" | "setup" | "game" | "scoring";
 
 function loadGame(): GameState | null {
   if (typeof window === "undefined") return null;
@@ -29,6 +31,7 @@ function loadGame(): GameState | null {
 
 function App() {
   const [screen, setScreen] = useState<Screen>("menu");
+  const [chosenMode, setChosenMode] = useState<GameMode>("standard");
   const [game, setGame] = useState<GameState | null>(() => loadGame());
   const [showRules, setShowRules] = useState(false);
 
@@ -38,8 +41,12 @@ function App() {
     }
   }, [game]);
 
-  const handleStart = (players: PlayerConfig[], rules: HouseRules) => {
-    const g = dealNewGame({ players, houseRules: rules });
+  const handleStart = (
+    players: PlayerConfig[],
+    rules: HouseRules,
+    mode: GameMode,
+  ) => {
+    const g = dealNewGame({ players, houseRules: rules, mode });
     setGame(g);
     setScreen("game");
   };
@@ -54,14 +61,28 @@ function App() {
         <MainMenu
           hasSavedGame={game !== null && game.winner === null}
           onContinue={() => setScreen("game")}
-          onNew={() => setScreen("setup")}
+          onNew={() => setScreen("mode")}
           onScoring={() => setScreen("scoring")}
           onRules={() => setShowRules(true)}
         />
       ) : null}
 
+      {screen === "mode" ? (
+        <ModeSelect
+          onBack={() => setScreen("menu")}
+          onChoose={(m) => {
+            setChosenMode(m);
+            setScreen("setup");
+          }}
+        />
+      ) : null}
+
       {screen === "setup" ? (
-        <SetupScreen onBack={() => setScreen("menu")} onStart={handleStart} />
+        <SetupScreen
+          mode={chosenMode}
+          onBack={() => setScreen("mode")}
+          onStart={handleStart}
+        />
       ) : null}
 
       {screen === "game" && game ? (
@@ -103,7 +124,6 @@ function ScoringPlaceholder({ onBack }: { onBack: () => void }) {
           <h2 className="text-2xl font-bold">Coming next</h2>
           <p className="text-white/60 text-sm">
             A digital scorecard for tracking points across rounds of physical Uno.
-            Players, round-by-round scores, and running totals — all saved on your device.
           </p>
         </div>
       </div>
