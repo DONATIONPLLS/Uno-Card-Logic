@@ -5,7 +5,7 @@ const cardBg: Record<WildColor, string> = {
   yellow: "bg-[hsl(48_100%_50%)]",
   green: "bg-[hsl(140_70%_38%)]",
   blue: "bg-[hsl(215_85%_45%)]",
-  wild: "bg-neutral-900",
+  wild: "bg-white",
 };
 
 const ovalColor: Record<WildColor, string> = {
@@ -13,7 +13,7 @@ const ovalColor: Record<WildColor, string> = {
   yellow: "text-[hsl(45_100%_45%)]",
   green: "text-[hsl(140_70%_35%)]",
   blue: "text-[hsl(215_85%_40%)]",
-  wild: "text-white",
+  wild: "text-black",
 };
 
 const cornerLabel: Record<CardValue, string> = {
@@ -24,10 +24,10 @@ const cornerLabel: Record<CardValue, string> = {
 
 export type CardSize = "sm" | "md" | "lg";
 
-const sizeMap: Record<CardSize, { box: string; oval: string; big: string; corner: string }> = {
-  sm: { box: "w-10 h-14", oval: "w-7 h-9", big: "text-xs", corner: "text-[8px]" },
-  md: { box: "w-16 h-24", oval: "w-12 h-16", big: "text-2xl", corner: "text-[11px]" },
-  lg: { box: "w-20 h-28", oval: "w-14 h-20", big: "text-3xl", corner: "text-xs" },
+const sizeMap: Record<CardSize, { box: string; oval: string; big: string; corner: string; back: string }> = {
+  sm: { box: "w-10 h-14", oval: "w-7 h-9", big: "text-xs", corner: "text-[8px]", back: "w-7 h-3 text-[8px]" },
+  md: { box: "w-16 h-24", oval: "w-12 h-16", big: "text-2xl", corner: "text-[11px]", back: "w-12 h-5 text-xs" },
+  lg: { box: "w-20 h-28", oval: "w-14 h-20", big: "text-3xl", corner: "text-xs", back: "w-14 h-6 text-sm" },
 };
 
 export function UnoCardView({
@@ -37,6 +37,7 @@ export function UnoCardView({
   faceDown,
   size = "md",
   small,
+  highlightColor,
 }: {
   card: UnoCard;
   onClick?: () => void;
@@ -44,6 +45,7 @@ export function UnoCardView({
   faceDown?: boolean;
   size?: CardSize;
   small?: boolean;
+  highlightColor?: "red" | "yellow" | "green" | "blue";
 }) {
   if (small && size === "md") size = "sm";
   const s = sizeMap[size];
@@ -51,16 +53,20 @@ export function UnoCardView({
   if (faceDown) {
     return (
       <div
-        className={`${s.box} rounded-xl bg-[hsl(0_75%_18%)] border-[3px] border-white flex items-center justify-center shadow-md select-none`}
+        className={`${s.box} rounded-xl bg-[hsl(0_75%_18%)] border-[3px] border-white flex items-center justify-center shadow-md select-none overflow-hidden`}
       >
-        <div className="bg-[hsl(0_85%_48%)] rounded-full px-2 py-0.5 -rotate-12">
-          <span className="text-white font-black italic text-xs tracking-tight">UNO</span>
+        <div className={`${s.back} bg-[hsl(0_85%_48%)] rounded-full -rotate-12 flex items-center justify-center`}>
+          <span className="text-white font-black italic tracking-tight leading-none">UNO</span>
         </div>
       </div>
     );
   }
 
   const big = bigGlyph(card.value);
+  const ringForChosen =
+    highlightColor && card.color === "wild"
+      ? colorRing(highlightColor)
+      : "";
 
   if (card.color === "wild") {
     return (
@@ -68,26 +74,25 @@ export function UnoCardView({
         type="button"
         onClick={onClick}
         disabled={disabled || !onClick}
-        className={`${s.box} relative rounded-xl border-[3px] border-white overflow-hidden shadow-md transition ${
+        className={`${s.box} relative rounded-xl border-[3px] border-white overflow-hidden shadow-md transition bg-white ${
           onClick && !disabled ? "active:scale-95" : ""
-        } ${disabled ? "opacity-90" : ""} select-none bg-black`}
+        } ${disabled ? "opacity-90" : ""} select-none ${ringForChosen}`}
       >
-        {/* 4-color quadrants */}
-        <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
-          <div className="bg-[hsl(0_85%_48%)]" />
-          <div className="bg-[hsl(48_100%_50%)]" />
-          <div className="bg-[hsl(215_85%_45%)]" />
-          <div className="bg-[hsl(140_70%_38%)]" />
-        </div>
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className={`${s.oval} bg-black rounded-full flex items-center justify-center -rotate-[18deg] border border-black/40`}>
-            <span className={`${s.big} text-white font-black`}>{big}</span>
-          </div>
+          <div
+            className={`${s.oval} rounded-full -rotate-[18deg]`}
+            style={{
+              background:
+                "conic-gradient(from 0deg, hsl(0 85% 50%) 0deg 90deg, hsl(48 100% 50%) 90deg 180deg, hsl(140 70% 40%) 180deg 270deg, hsl(215 85% 48%) 270deg 360deg)",
+              clipPath:
+                "polygon(50% 0%, 60% 35%, 100% 50%, 60% 65%, 50% 100%, 40% 65%, 0% 50%, 40% 35%)",
+            }}
+          />
         </div>
-        <span className={`absolute top-1 left-1 ${s.corner} font-black text-white drop-shadow`}>
+        <span className={`absolute top-1 left-1 ${s.corner} font-black text-black drop-shadow`}>
           {cornerLabel[card.value]}
         </span>
-        <span className={`absolute bottom-1 right-1 ${s.corner} font-black text-white drop-shadow rotate-180`}>
+        <span className={`absolute bottom-1 right-1 ${s.corner} font-black text-black drop-shadow rotate-180`}>
           {cornerLabel[card.value]}
         </span>
       </button>
@@ -105,9 +110,7 @@ export function UnoCardView({
     >
       <div className="absolute inset-0 flex items-center justify-center">
         <div className={`${s.oval} bg-white rounded-full flex items-center justify-center -rotate-[18deg]`}>
-          <span className={`${s.big} ${ovalColor[card.color]} font-black leading-none`}>
-            {big}
-          </span>
+          <span className={`${s.big} ${ovalColor[card.color]} font-black leading-none`}>{big}</span>
         </div>
       </div>
       <span className={`absolute top-1 left-1 ${s.corner} font-black text-white drop-shadow`}>
@@ -125,8 +128,17 @@ function bigGlyph(v: CardValue): string {
     case "skip": return "⊘";
     case "reverse": return "↺";
     case "draw2": return "+2";
-    case "wild": return "★";
+    case "wild": return "";
     case "wild4": return "+4";
     default: return v;
   }
+}
+
+function colorRing(c: "red" | "yellow" | "green" | "blue"): string {
+  return {
+    red: "ring-[6px] ring-[hsl(0_85%_50%)]",
+    yellow: "ring-[6px] ring-[hsl(48_100%_50%)]",
+    green: "ring-[6px] ring-[hsl(140_70%_40%)]",
+    blue: "ring-[6px] ring-[hsl(215_85%_48%)]",
+  }[c];
 }

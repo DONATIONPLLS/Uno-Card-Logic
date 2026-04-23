@@ -7,6 +7,7 @@ import {
   hasPlayableCard,
   isValidMove,
   nameOf,
+  nextPlayer,
   playCard,
   resolveSwap,
   type GameState,
@@ -33,23 +34,43 @@ function seatLayout(n: number): SeatPos[] {
   return ["left", "top", "right"];
 }
 
+export interface GameActions {
+  play: (cardId: string, color?: UnoColor) => void;
+  draw: () => void;
+  endTurn: () => void;
+  resolveSwap: (targetIdx: number) => void;
+}
+
 export function GameBoard({
   game,
   setGame,
   onExit,
+  viewerIdx,
+  actions,
+  enableBots = true,
+  passAndPlay,
 }: {
   game: GameState;
   setGame: (updater: (g: GameState) => GameState) => void;
   onExit: () => void;
+  viewerIdx?: number;       // fixed POV for multiplayer; otherwise pass-and-play
+  actions?: GameActions;    // optional remote action handler
+  enableBots?: boolean;
+  passAndPlay?: boolean;    // if true, show privacy overlays
 }) {
+  // If viewerIdx is set, that's whose hand we always show. Otherwise show currentPlayer's.
+  const isPassAndPlay = passAndPlay ?? viewerIdx === undefined;
+  const handViewIdx = viewerIdx ?? game.currentPlayer;
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickColorFor, setPickColorFor] = useState<string | null>(null);
   const [swapPickerFor, setSwapPickerFor] = useState<number | null>(null);
   const [showRules, setShowRules] = useState(false);
-  const [revealed, setRevealed] = useState(false);
+  const [revealed, setRevealed] = useState(viewerIdx !== undefined);
   const [hasDrawnThisTurn, setHasDrawnThisTurn] = useState(false);
   const [drawArmed, setDrawArmed] = useState(false);
-  const prevTurnRef = useRef<{ idx: number; kind: "human" | "bot" } | null>(null);
+  const prevTurnRef = useRef<number | null>(null);
+  const lastHumanRef = useRef<number | null>(null);
   const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
   const wonRef = useRef(false);
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -58,10 +79,21 @@ export function GameBoard({
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
+  const myTurn = handViewIdx === currentIdx && game.winner === null;
   const isHumanTurn = currentPlayer?.kind === "human" && game.winner === null;
   const top = game.discardPile[game.discardPile.length - 1];
+  const upNextIdx = nextPlayer(game);
+  const upNext = game.players[upNextIdx];
 
-  // Win sound
+  // Default actions = direct local mutation
+  const act: GameActions = actions ?? {
+    play: (cardId, color) => setGame((g) => playCard(g, g.currentPlayer, cardId, color)),
+    draw: () => setGame((g) => drawOne(g, g.currentPlayer)),
+    endTurn: () => setGame((g) => endTurn(g, g.currentPlayer)),
+    resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
+  };
+
+  // Win sound + win banner
   useEffect(() => {
     if (game.winner !== null && !wonRef.current) {
       wonRef.current = true;
@@ -73,7 +105,7 @@ export function GameBoard({
     return undefined;
   }, [game.winner, game.players]);
 
-  // Action announcements (driven by changes to discard top)
+  // Action announcements driven by discard top changes
   useEffect(() => {
     const prev = lastTopRef.current;
     lastTopRef.current = top;
@@ -85,27 +117,27 @@ export function GameBoard({
       case "draw2": msg = "+2 DRAW!"; break;
       case "wild4": msg = "+4 WILD!"; break;
       case "wild": msg = "WILD!"; break;
-      case "0":
-        if (game.houseRules.sevenZero) msg = "ALL PASS!";
-        break;
-      case "7":
-        if (game.houseRules.sevenZero) msg = "SWAP!";
-        break;
+      case "0": if (game.houseRules.sevenZero) msg = "ALL PASS!"; break;
+      case "7": if (game.houseRules.sevenZero) msg = "SWAP!"; break;
     }
     if (msg) {
       setAnnouncement(msg);
-      const t = setTimeout(() => setAnnouncement(null), 1100);
+      const t = setTimeout(() => setAnnouncement(null), 1500);
       return () => clearTimeout(t);
     }
     return undefined;
   }, [top, game.houseRules.sevenZero]);
 
-  // Turn change handling: privacy overlay + reset
+  // Smart privacy logic — only for pass-and-play
   useEffect(() => {
+    if (!isPassAndPlay) {
+      setRevealed(true);
+      setOverlayKind(null);
+      return;
+    }
     const prev = prevTurnRef.current;
-    const cur = { idx: currentIdx, kind: currentPlayer?.kind ?? "human" };
-    if (prev?.idx === cur.idx) return;
-    prevTurnRef.current = cur;
+    if (prev === currentIdx) return;
+    prevTurnRef.current = currentIdx;
     setSelectedId(null);
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
@@ -116,21 +148,40 @@ export function GameBoard({
       setOverlayKind(null);
       return;
     }
+    const cur = game.players[currentIdx];
     if (cur.kind === "bot") {
       setRevealed(true);
       setOverlayKind(null);
       return;
     }
-    setRevealed(false);
-    if (!prev) setOverlayKind("pass");
-    else if (prev.kind === "bot") {
-      setOverlayKind("yourturn");
+    // Human turn — only show overlay when the human is different from the previous human player
+    const lastHuman = lastHumanRef.current;
+    if (lastHuman === currentIdx) {
+      // Same human as last time (e.g., bots played in between). Keep table revealed.
+      setRevealed(true);
+      setOverlayKind(null);
       sfx.ding();
-    } else setOverlayKind("pass");
-  }, [currentIdx, currentPlayer?.kind, game.winner]);
+    } else if (lastHuman === null) {
+      // Very first human turn
+      setRevealed(false);
+      setOverlayKind("pass");
+    } else {
+      // Different human from last time — privacy needed
+      setRevealed(false);
+      setOverlayKind("pass");
+    }
+  }, [currentIdx, game.players, game.winner, isPassAndPlay]);
 
-  // Bot loop
+  // Track lastHumanRef once they actually reveal
   useEffect(() => {
+    if (revealed && currentPlayer?.kind === "human") {
+      lastHumanRef.current = currentIdx;
+    }
+  }, [revealed, currentIdx, currentPlayer?.kind]);
+
+  // Bot loop with random 1.2-2.0s pacing
+  useEffect(() => {
+    if (!enableBots) return;
     if (game.winner !== null) return;
     if (game.pendingAction?.type === "swap7") {
       const fromKind = game.players[game.pendingAction.from].kind;
@@ -140,12 +191,13 @@ export function GameBoard({
             if (g.pendingAction?.type !== "swap7") return g;
             return resolveSwap(g, chooseBotSwapTarget(g));
           });
-        }, 700);
+        }, 1100 + Math.random() * 600);
         return () => clearTimeout(t);
       }
       return;
     }
     if (currentPlayer?.kind !== "bot") return;
+    const delay = 1200 + Math.random() * 800;
     const t = setTimeout(() => {
       setGame((g) => {
         if (g.winner !== null || g.pendingAction !== null) return g;
@@ -163,27 +215,36 @@ export function GameBoard({
         if (newCard && isValidMove(newCard, afterDraw.discardPile[afterDraw.discardPile.length - 1], afterDraw.activeColor, afterDraw.pendingDraw, afterDraw.houseRules)) {
           const followUp = chooseBotMove(afterDraw, idx);
           if (followUp.type === "play") {
-            setTimeout(() => sfx.swish(), 280);
+            setTimeout(() => sfx.swish(), 400);
             return playCard(afterDraw, idx, followUp.cardId, followUp.chosenColor);
           }
         }
         return endTurn(afterDraw, idx);
       });
-    }, 850);
+    }, delay);
     return () => clearTimeout(t);
-  }, [game.currentPlayer, game.winner, game.pendingAction, currentPlayer, setGame]);
+  }, [game.currentPlayer, game.winner, game.pendingAction, currentPlayer, setGame, enableBots]);
 
-  // Edge-clip fix: whenever a card becomes selected, scroll it into view
+  // Edge-clip fix
   useEffect(() => {
     if (!selectedId) return;
     const el = cardRefs.current[selectedId];
     if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [selectedId]);
 
+  // Reset per-turn state for fixed-viewer modes
+  useEffect(() => {
+    if (isPassAndPlay) return;
+    setSelectedId(null);
+    setPickColorFor(null);
+    setHasDrawnThisTurn(false);
+    setDrawArmed(false);
+  }, [currentIdx, isPassAndPlay]);
+
   const onCardTap = (cardId: string) => {
-    if (!isHumanTurn || !revealed) return;
+    if (!myTurn || !revealed) return;
     if (game.pendingAction !== null) return;
-    const card = game.hands[currentIdx].find((c) => c.id === cardId);
+    const card = game.hands[handViewIdx].find((c) => c.id === cardId);
     if (!card) return;
     const playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     setDrawArmed(false);
@@ -197,25 +258,34 @@ export function GameBoard({
       setSelectedId(cardId);
       return;
     }
+    confirmPlay();
+  };
+
+  const confirmPlay = () => {
+    if (!selectedId) return;
+    const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
+    if (!card) return;
+    const playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
+    if (!playable) return;
     if (card.color === "wild") {
-      setPickColorFor(cardId);
+      setPickColorFor(selectedId);
       return;
     }
     sfx.swish();
-    setGame((g) => playCard(g, currentIdx, cardId));
+    act.play(selectedId);
     setSelectedId(null);
   };
 
   const handlePickColor = (color: UnoColor) => {
     if (!pickColorFor) return;
     sfx.swish();
-    setGame((g) => playCard(g, currentIdx, pickColorFor, color));
+    act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
   };
 
   const onDrawPileTap = () => {
-    if (!isHumanTurn || !revealed) return;
+    if (!myTurn || !revealed) return;
     if (game.pendingAction !== null) return;
     if (selectedId) {
       setSelectedId(null);
@@ -228,47 +298,44 @@ export function GameBoard({
       return;
     }
     sfx.draw();
-    setGame((g) => drawOne(g, currentIdx));
+    act.draw();
     setHasDrawnThisTurn(true);
     setDrawArmed(false);
   };
 
   const onPass = () => {
-    if (!isHumanTurn || !revealed) return;
-    setGame((g) => endTurn(g, currentIdx));
+    if (!myTurn || !revealed) return;
+    act.endTurn();
   };
 
   const onPickSwap = (targetIdx: number) => {
-    setGame((g) => resolveSwap(g, targetIdx));
+    act.resolveSwap(targetIdx);
     setSwapPickerFor(null);
   };
 
   useEffect(() => {
     if (
       game.pendingAction?.type === "swap7" &&
-      game.players[game.pendingAction.from].kind === "human" &&
+      game.pendingAction.from === handViewIdx &&
       revealed
     ) {
       setSwapPickerFor(game.pendingAction.from);
     } else {
       setSwapPickerFor(null);
     }
-  }, [game.pendingAction, game.players, revealed]);
+  }, [game.pendingAction, handViewIdx, revealed]);
 
-  const myHand = game.hands[currentIdx] ?? [];
-  const playableExists = isHumanTurn && hasPlayableCard(game, currentIdx);
-  const canPass = isHumanTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
+  const myHand = game.hands[handViewIdx] ?? [];
+  const playableExists = myTurn && hasPlayableCard(game, handViewIdx);
+  const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
 
-  // Map opponents to seats
-  const otherIdxs = game.players
-    .map((_, i) => i)
-    .filter((i) => i !== currentIdx);
+  // Seat assignments — viewers own the bottom seat
+  const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
   const positions = seatLayout(game.players.length);
   const seated: { pos: SeatPos; idx: number }[] = otherIdxs.map((idx, i) => ({
     pos: positions[i] ?? "top",
     idx,
   }));
-
   const seatAt = (pos: SeatPos) => seated.find((s) => s.pos === pos);
 
   return (
@@ -287,17 +354,27 @@ export function GameBoard({
         >
           ←
         </button>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-xs text-white/50">Now playing:</div>
-          <div className="text-sm font-bold truncate">
-            {currentPlayer?.name}
-            {currentPlayer?.kind === "bot" ? " (AI)" : ""}
-          </div>
-          <span className={`w-3 h-3 rounded-full ${colorSwatch[game.activeColor]} border border-white/40 ml-1`} />
-          {game.pendingDraw > 0 ? (
-            <span className="ml-2 px-2 py-0.5 rounded bg-red-500/40 text-red-50 text-[10px] font-bold">
-              +{game.pendingDraw}
+        <div className="flex flex-col items-center min-w-0 leading-tight">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs text-white/50">Now playing:</span>
+            <span className="text-sm font-bold truncate">
+              {currentPlayer?.name}
+              {currentPlayer?.kind === "bot" ? " (AI)" : ""}
             </span>
+            <span
+              className={`w-3 h-3 rounded-full ${colorSwatch[game.activeColor]} border border-white/40`}
+            />
+            {game.pendingDraw > 0 ? (
+              <span className="ml-1 px-2 py-0.5 rounded bg-red-500/40 text-red-50 text-[10px] font-bold">
+                +{game.pendingDraw}
+              </span>
+            ) : null}
+          </div>
+          {upNext && game.winner === null ? (
+            <div className="text-[10px] text-white/50 mt-0.5">
+              Next up: <span className="text-white/80 font-semibold">{upNext.name}</span>
+              {upNext.kind === "bot" ? " (AI)" : ""}
+            </div>
           ) : null}
         </div>
         <button
@@ -311,7 +388,6 @@ export function GameBoard({
 
       {/* Table */}
       <div className="flex-1 grid relative" style={tableGridStyle}>
-        {/* Top seat */}
         <div className="row-start-1 col-start-2 flex items-start justify-center pt-2">
           {seatAt("top") ? (
             <SeatView
@@ -323,7 +399,6 @@ export function GameBoard({
             />
           ) : null}
         </div>
-        {/* Left seat */}
         <div className="row-start-2 col-start-1 flex items-center justify-start pl-1">
           {seatAt("left") ? (
             <SeatView
@@ -335,7 +410,6 @@ export function GameBoard({
             />
           ) : null}
         </div>
-        {/* Right seat */}
         <div className="row-start-2 col-start-3 flex items-center justify-end pr-1">
           {seatAt("right") ? (
             <SeatView
@@ -348,7 +422,6 @@ export function GameBoard({
           ) : null}
         </div>
 
-        {/* Center piles */}
         <div
           className="row-start-2 col-start-2 flex items-center justify-center gap-4"
           onClick={() => {
@@ -361,9 +434,9 @@ export function GameBoard({
               e.stopPropagation();
               onDrawPileTap();
             }}
-            disabled={!isHumanTurn || !revealed || hasDrawnThisTurn || game.pendingAction !== null}
+            disabled={!myTurn || !revealed || hasDrawnThisTurn || game.pendingAction !== null}
             className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-              isHumanTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null
+              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null
                 ? "active:scale-95"
                 : "opacity-70"
             } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
@@ -375,16 +448,24 @@ export function GameBoard({
           </button>
           <div className="flex flex-col items-center gap-1">
             <div key={top.id} className="animate-[flyIn_.35s_ease-out]">
-              <UnoCardView card={top} disabled size="md" />
+              <UnoCardView card={top} disabled size="md" highlightColor={game.activeColor} />
             </div>
             <span className="text-[10px] text-white/60">Top</span>
           </div>
         </div>
 
-        {/* Action overlay */}
+        {/* Impact text overlay */}
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-            <div className="px-8 py-4 rounded-2xl bg-black/80 border-4 border-white text-3xl sm:text-5xl font-black tracking-wider text-white animate-[popIn_.25s_ease-out] shadow-2xl">
+            <div
+              className="font-black tracking-wider text-white animate-[impactText_1.5s_ease-out_forwards]"
+              style={{
+                fontSize: "clamp(2.5rem, 8vw, 5rem)",
+                WebkitTextStroke: "3px black",
+                textShadow: "0 6px 18px rgba(0,0,0,0.7), 0 0 30px rgba(255,255,255,0.3)",
+                letterSpacing: "0.03em",
+              }}
+            >
               {announcement}
             </div>
           </div>
@@ -403,15 +484,18 @@ export function GameBoard({
         <div className="flex items-center justify-between mb-1 px-3">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar
-              name={currentPlayer?.name ?? "?"}
-              idx={currentIdx}
-              kind={currentPlayer?.kind ?? "human"}
+              name={game.players[handViewIdx]?.name ?? "?"}
+              idx={handViewIdx}
+              kind={game.players[handViewIdx]?.kind ?? "human"}
               size="sm"
-              glow={isHumanTurn}
+              glow={myTurn}
             />
             <span className="text-sm font-semibold truncate">
-              {currentPlayer?.name} ({myHand.length})
+              {game.players[handViewIdx]?.name} ({myHand.length})
             </span>
+            {!myTurn && game.winner === null ? (
+              <span className="text-[10px] text-white/50 ml-1">waiting…</span>
+            ) : null}
           </div>
           {canPass ? (
             <button
@@ -429,24 +513,35 @@ export function GameBoard({
             </button>
           ) : null}
         </div>
-        <div className="overflow-x-auto pt-10 px-3 scroll-smooth">
+        <div className="overflow-x-auto pt-12 px-3 scroll-smooth">
           <div className="flex gap-2 items-end pb-2">
             {myHand.map((c) => {
-              const playable = isHumanTurn && isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
+              const playable = myTurn && isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
               const selected = selectedId === c.id;
               return (
                 <div
                   key={c.id}
                   ref={(el) => { cardRefs.current[c.id] = el; }}
-                  className={`shrink-0 transition-transform duration-150 ${selected ? "-translate-y-8" : ""}`}
-                  style={{ zIndex: selected ? 30 : 1, position: "relative" }}
+                  className={`shrink-0 transition-transform duration-150 relative ${selected ? "-translate-y-8" : ""}`}
+                  style={{ zIndex: selected ? 30 : 1 }}
                 >
+                  {selected && playable ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        confirmPlay();
+                      }}
+                      className="absolute left-1/2 -translate-x-1/2 -top-9 px-3 py-1 rounded-full bg-[hsl(140_70%_42%)] text-white text-xs font-bold shadow-lg active:scale-95 whitespace-nowrap z-40"
+                    >
+                      ✓ Play
+                    </button>
+                  ) : null}
                   <div className={`rounded-xl ${selected ? "ring-4 ring-white shadow-2xl" : ""}`}>
                     <UnoCardView
-                      card={revealed || !isHumanTurn ? c : { ...c, color: "wild", value: "wild" }}
+                      card={revealed || !myTurn ? c : { ...c, color: "wild", value: "wild" }}
                       onClick={() => onCardTap(c.id)}
-                      disabled={!isHumanTurn || !revealed || (!playable && !selected)}
-                      faceDown={!revealed && isHumanTurn}
+                      disabled={!myTurn || !revealed || (!playable && !selected)}
+                      faceDown={!revealed && myTurn && isPassAndPlay}
                       size="lg"
                     />
                   </div>
@@ -496,7 +591,7 @@ export function GameBoard({
         </Modal>
       ) : null}
 
-      {isHumanTurn && !revealed && overlayKind && game.winner === null ? (
+      {isPassAndPlay && isHumanTurn && !revealed && overlayKind && game.winner === null ? (
         <PassOverlay
           name={currentPlayer.name}
           idx={currentIdx}
@@ -533,20 +628,18 @@ function SeatView({
   idx: number;
   active: boolean;
 }) {
-  // Show up to 7 fanned face-down cards; any extras are summarized
   const shown = hand.slice(0, 7);
   const extra = hand.length - shown.length;
-
   return (
-    <div className={`flex ${orientation === "horizontal" ? "flex-col items-center gap-1" : "flex-col items-center gap-1"}`}>
+    <div className="flex flex-col items-center gap-1">
       <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" glow={active} />
       <div className="text-[10px] text-white/70 text-center max-w-[80px] truncate">
         {player.name}
         {player.kind === "bot" ? " (AI)" : ""}
-        <div className="text-white/50">{hand.length}🂠</div>
+        <div className="text-white/50">{hand.length} cards</div>
       </div>
       <div
-        className={`flex ${orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"} items-center`}
+        className={`flex items-center ${orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"}`}
       >
         {shown.map((c, i) => (
           <div

@@ -1,20 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   dealNewGame,
+  drawOne,
+  endTurn,
+  playCard,
+  resolveSwap,
   type GameMode,
   type GameState,
   type HouseRules,
   type PlayerConfig,
+  type UnoColor,
 } from "@/lib/uno-engine";
 import { MainMenu } from "@/components/MainMenu";
 import { ModeSelect } from "@/components/ModeSelect";
 import { SetupScreen } from "@/components/SetupScreen";
-import { GameBoard } from "@/components/GameBoard";
+import { GameBoard, type GameActions } from "@/components/GameBoard";
 import { RulesPanel } from "@/components/RulesPanel";
+import { LocalMultiplayer } from "@/components/LocalMultiplayer";
+import type { HostHandle, JoinHandle } from "@/lib/peerSync";
 
 const STORAGE_KEY = "uno-buddy:game";
 
-type Screen = "menu" | "mode" | "setup" | "game" | "scoring";
+type Screen = "menu" | "mode" | "setup" | "game" | "scoring" | "lobby";
 
 function loadGame(): GameState | null {
   if (typeof window === "undefined") return null;
@@ -29,17 +36,61 @@ function loadGame(): GameState | null {
   }
 }
 
+interface MultiSession {
+  role: "host" | "join";
+  viewerIdx: number;
+  host: HostHandle | null;
+  join: JoinHandle | null;
+}
+
 function App() {
   const [screen, setScreen] = useState<Screen>("menu");
   const [chosenMode, setChosenMode] = useState<GameMode>("standard");
   const [game, setGame] = useState<GameState | null>(() => loadGame());
   const [showRules, setShowRules] = useState(false);
+  const [multi, setMulti] = useState<MultiSession | null>(null);
+  const gameRef = useRef<GameState | null>(game);
+  gameRef.current = game;
 
   useEffect(() => {
-    if (game) {
+    if (game && !multi) {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
     }
-  }, [game]);
+  }, [game, multi]);
+
+  // Multiplayer wiring
+  useEffect(() => {
+    if (!multi) return;
+    if (multi.role === "host" && multi.host) {
+      const h = multi.host;
+      h.onMessage((msg) => {
+        if (msg.type === "action") {
+          setGame((g) => {
+            if (!g) return g;
+            const a = msg.action;
+            let next = g;
+            if (a.kind === "play") next = playCard(g, 1, a.cardId, a.color);
+            else if (a.kind === "draw") next = drawOne(g, 1);
+            else if (a.kind === "endTurn") next = endTurn(g, 1);
+            else if (a.kind === "swap") next = resolveSwap(g, a.targetIdx);
+            h.broadcast({ type: "state", game: next });
+            return next;
+          });
+        }
+      });
+    } else if (multi.role === "join" && multi.join) {
+      const j = multi.join;
+      j.onMessage((msg) => {
+        if (msg.type === "state") setGame(msg.game);
+      });
+    }
+  }, [multi]);
+
+  // Host: re-broadcast whenever local game changes
+  useEffect(() => {
+    if (!multi || multi.role !== "host" || !multi.host || !game) return;
+    multi.host.broadcast({ type: "state", game });
+  }, [game, multi]);
 
   const handleStart = (
     players: PlayerConfig[],
@@ -55,13 +106,50 @@ function App() {
     setGame((prev) => (prev ? updater(prev) : prev));
   };
 
+  const exitGame = () => {
+    if (multi) {
+      multi.host?.destroy();
+      multi.join?.destroy();
+      setMulti(null);
+    }
+    setScreen("menu");
+  };
+
+  // Joiner-side action sender
+  const joinerActions: GameActions | undefined =
+    multi?.role === "join" && multi.join
+      ? {
+          play: (cardId, color) =>
+            multi.join!.send({ type: "action", action: { kind: "play", cardId, color } }),
+          draw: () =>
+            multi.join!.send({ type: "action", action: { kind: "draw" } }),
+          endTurn: () =>
+            multi.join!.send({ type: "action", action: { kind: "endTurn" } }),
+          resolveSwap: (targetIdx) =>
+            multi.join!.send({ type: "action", action: { kind: "swap", targetIdx } }),
+        }
+      : undefined;
+
+  const onMultiStart = (
+    initialGame: GameState,
+    role: "host" | "join",
+    viewerIdx: number,
+    host: HostHandle | null,
+    join: JoinHandle | null,
+  ) => {
+    setGame(initialGame);
+    setMulti({ role, viewerIdx, host, join });
+    setScreen("game");
+  };
+
   return (
     <div key={screen} className="animate-[fadeIn_.22s_ease-out]">
       {screen === "menu" ? (
         <MainMenu
-          hasSavedGame={game !== null && game.winner === null}
+          hasSavedGame={game !== null && game.winner === null && !multi}
           onContinue={() => setScreen("game")}
           onNew={() => setScreen("mode")}
+          onLocalMultiplayer={() => setScreen("lobby")}
           onScoring={() => setScreen("scoring")}
           onRules={() => setShowRules(true)}
         />
@@ -85,11 +173,22 @@ function App() {
         />
       ) : null}
 
+      {screen === "lobby" ? (
+        <LocalMultiplayer
+          onBack={() => setScreen("menu")}
+          onStart={onMultiStart}
+        />
+      ) : null}
+
       {screen === "game" && game ? (
         <GameBoard
           game={game}
           setGame={updateGame}
-          onExit={() => setScreen("menu")}
+          onExit={exitGame}
+          viewerIdx={multi?.viewerIdx}
+          actions={joinerActions}
+          enableBots={!multi}
+          passAndPlay={!multi}
         />
       ) : null}
 
@@ -106,13 +205,12 @@ function App() {
           60% { opacity: 1; }
           to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
         }
-        @keyframes popIn {
-          0% { opacity: 0; transform: scale(.5); }
-          70% { opacity: 1; transform: scale(1.08); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        .bg-gradient-radial {
-          background-image: radial-gradient(ellipse at center, var(--tw-gradient-from), var(--tw-gradient-via, transparent), var(--tw-gradient-to));
+        @keyframes impactText {
+          0% { transform: scale(0); opacity: 0; }
+          18% { transform: scale(1.25); opacity: 1; }
+          32% { transform: scale(1); opacity: 1; }
+          70% { transform: scale(1) translateY(0); opacity: 1; }
+          100% { transform: scale(1.05) translateY(-50px); opacity: 0; }
         }
       `}</style>
     </div>
