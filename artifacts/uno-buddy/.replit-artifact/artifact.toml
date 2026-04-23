@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Uno Buddy"
+version = "1.0.0"
+id = "artifacts/uno-buddy"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20869
+
+[services.development]
+run = "pnpm --filter @workspace/uno-buddy run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/uno-buddy", "run", "build" ]
+publicDir = "artifacts/uno-buddy/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20869"
+BASE_PATH = "/"
