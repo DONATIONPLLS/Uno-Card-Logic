@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   MODE_PRESETS,
   type GameMode,
@@ -6,6 +6,30 @@ import {
   type PlayerConfig,
   type PlayerKind,
 } from "@/lib/uno-engine";
+import { Avatar } from "@/components/Avatar";
+
+const BOT_NAMES = [
+  "Sparky",
+  "Bluffing Ben",
+  "Uno Master",
+  "Lucky Luna",
+  "Wild Wendy",
+  "Quick Quinn",
+  "Cunning Cleo",
+  "Dizzy Dex",
+  "Sly Sam",
+  "Jumpy Jules",
+];
+
+function pickBotNames(n: number): string[] {
+  const pool = [...BOT_NAMES];
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    out.push(pool.splice(idx, 1)[0] ?? `UnoBot ${i + 1}`);
+  }
+  return out;
+}
 
 const MODE_LABEL: Record<GameMode, string> = {
   standard: "Standard Uno",
@@ -27,17 +51,36 @@ export function SetupScreen({
   const presetRules =
     mode === "custom" ? MODE_PRESETS.standard : MODE_PRESETS[mode];
 
+  const initialBots = useMemo(() => pickBotNames(4), []);
   const [count, setCount] = useState(2);
   const [players, setPlayers] = useState<PlayerConfig[]>([
-    { name: "You", kind: "human" },
-    { name: "UnoBot 1", kind: "bot" },
-    { name: "UnoBot 2", kind: "bot" },
-    { name: "UnoBot 3", kind: "bot" },
+    { name: "Player 1", kind: "human" },
+    { name: initialBots[0], kind: "bot" },
+    { name: initialBots[1], kind: "bot" },
+    { name: initialBots[2], kind: "bot" },
   ]);
   const [rules, setRules] = useState<HouseRules>(presetRules);
 
+  const isDefaultName = (name: string, i: number) =>
+    name === `Player ${i + 1}` || BOT_NAMES.includes(name);
+
   const setKind = (i: number, kind: PlayerKind) =>
-    setPlayers((p) => p.map((pl, idx) => (idx === i ? { ...pl, kind } : pl)));
+    setPlayers((p) =>
+      p.map((pl, idx) => {
+        if (idx !== i) return pl;
+        // If the player hasn't typed a custom name, swap to a sensible default
+        if (isDefaultName(pl.name, i)) {
+          if (kind === "bot") {
+            const used = new Set(p.filter((_, j) => j !== i).map((x) => x.name));
+            const free = BOT_NAMES.filter((n) => !used.has(n));
+            const name = free[Math.floor(Math.random() * free.length)] ?? `UnoBot ${i + 1}`;
+            return { name, kind };
+          }
+          return { name: `Player ${i + 1}`, kind };
+        }
+        return { ...pl, kind };
+      }),
+    );
   const setName = (i: number, name: string) =>
     setPlayers((p) => p.map((pl, idx) => (idx === i ? { ...pl, name } : pl)));
 
@@ -99,13 +142,7 @@ export function SetupScreen({
               key={i}
               className="rounded-xl bg-white/5 border border-white/10 p-3 flex items-center gap-3"
             >
-              <div
-                className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${
-                  ["bg-[hsl(0_85%_50%)]", "bg-[hsl(48_100%_50%)] text-black", "bg-[hsl(140_70%_42%)]", "bg-[hsl(215_85%_45%)]"][i]
-                }`}
-              >
-                P{i + 1}
-              </div>
+              <Avatar name={p.name} idx={i} kind={p.kind} />
               <input
                 value={p.name}
                 onChange={(e) => setName(i, e.target.value)}

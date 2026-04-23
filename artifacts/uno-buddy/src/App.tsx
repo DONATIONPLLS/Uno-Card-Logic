@@ -101,6 +101,11 @@ function App() {
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+        @keyframes flyIn {
+          from { opacity: 0; transform: translateY(-180px) scale(.7) rotate(-12deg); }
+          60% { opacity: 1; }
+          to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+        }
       `}</style>
     </div>
   );

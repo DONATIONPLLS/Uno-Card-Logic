@@ -153,9 +153,13 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     activeColor: first.color === "wild" ? "red" : (first.color as UnoColor),
     pendingDraw: 0,
     pendingAction: null,
-    log: [`Game started. Top card: ${describe(first)}.`],
+    log: [`Game started. Top card: ${describe(first)}.`, `${nameOf(players[0])} starts.`],
     winner: null,
   };
+}
+
+export function nameOf(p: PlayerConfig): string {
+  return p.kind === "bot" ? `${p.name} (AI)` : p.name;
 }
 
 export function describe(c: UnoCard): string {
@@ -211,18 +215,18 @@ export function playCard(
 
   hand.splice(idx, 1);
   s.discardPile.push(card);
-  s.log.unshift(`${s.players[playerIdx].name} played ${describe(card)}.`);
+  s.log.unshift(`${nameOf(s.players[playerIdx])} played ${describe(card)}.`);
 
   if (card.color !== "wild") {
     s.activeColor = card.color as UnoColor;
   } else {
     s.activeColor = chosenColor ?? "red";
-    s.log.unshift(`${s.players[playerIdx].name} chose ${s.activeColor}.`);
+    s.log.unshift(`${nameOf(s.players[playerIdx])} chose ${s.activeColor}.`);
   }
 
   if (hand.length === 0) {
     s.winner = playerIdx;
-    s.log.unshift(`${s.players[playerIdx].name} wins!`);
+    s.log.unshift(`${nameOf(s.players[playerIdx])} wins!`);
     return s;
   }
 
@@ -258,7 +262,7 @@ export function playCard(
 
   if (s.houseRules.sevenZero && card.value === "7") {
     s.pendingAction = { type: "swap7", from: playerIdx };
-    s.log.unshift(`${s.players[playerIdx].name} must choose someone to swap hands with.`);
+    s.log.unshift(`${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`);
     return s;
   }
 
@@ -267,7 +271,7 @@ export function playCard(
   if (s.pendingDraw > 0 && !canStack(s)) {
     const target = s.currentPlayer;
     s = drawCards(s, target, s.pendingDraw);
-    s.log.unshift(`${s.players[target].name} drew ${s.pendingDraw} cards.`);
+    s.log.unshift(`${nameOf(s.players[target])} drew ${s.pendingDraw} cards.`);
     s.pendingDraw = 0;
     s.currentPlayer = nextPlayer(s);
   }
@@ -282,7 +286,7 @@ export function resolveSwap(state: GameState, targetIdx: number): GameState {
   const tmp = s.hands[from];
   s.hands[from] = s.hands[targetIdx];
   s.hands[targetIdx] = tmp;
-  s.log.unshift(`${s.players[from].name} swapped hands with ${s.players[targetIdx].name}.`);
+  s.log.unshift(`${nameOf(s.players[from])} swapped hands with ${nameOf(s.players[targetIdx])}.`);
   s.pendingAction = null;
   s.currentPlayer = nextPlayer(s);
   return s;
@@ -308,7 +312,7 @@ export function drawOne(state: GameState, playerIdx: number): GameState {
   if (playerIdx !== s.currentPlayer) return s;
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
-  s.log.unshift(`${s.players[playerIdx].name} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
+  s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
   s.pendingDraw = 0;
   return s;
 }
