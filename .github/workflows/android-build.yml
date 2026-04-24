@@ -28,10 +28,16 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install Game Dependencies
-        # We tell pnpm to ignore the workspace and the broken catalog
+      - name: Strip Replit Catalogs
+        # This magic command removes any dependency that mentions "@catalog"
         run: |
-          pnpm install --no-frozen-lockfile --ignore-workspace
+          sed -i '/@catalog/d' package.json
+          # Also remove the Replit-specific vite plugin that's causing the crash
+          sed -i '/vite-plugin-cartographer/d' package.json
+        working-directory: artifacts/uno-buddy
+
+      - name: Install Game Dependencies
+        run: pnpm install --no-frozen-lockfile --ignore-workspace
         working-directory: artifacts/uno-buddy
 
       - name: Build Web Assets
