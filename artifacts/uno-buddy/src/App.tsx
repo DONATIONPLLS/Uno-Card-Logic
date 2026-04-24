@@ -313,12 +313,23 @@ function App() {
           60% { opacity: 1; }
           to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
         }
-        @keyframes impactText {
-          0% { transform: scale(0); opacity: 0; }
-          18% { transform: scale(1.25); opacity: 1; }
-          32% { transform: scale(1); opacity: 1; }
+        @keyframes flyTo {
+          0% {
+            transform: translate(var(--sx), var(--sy)) scale(.7) rotate(-18deg);
+            opacity: 0;
+          }
+          15% { opacity: 1; }
+          100% {
+            transform: translate(var(--ex), var(--ey)) scale(1) rotate(0deg);
+            opacity: 1;
+          }
+        }
+        @keyframes impactPop {
+          0% { transform: scale(.5); opacity: 0; }
+          22% { transform: scale(1.2); opacity: 1; }
+          38% { transform: scale(1); opacity: 1; }
           70% { transform: scale(1) translateY(0); opacity: 1; }
-          100% { transform: scale(1.05) translateY(-50px); opacity: 0; }
+          100% { transform: scale(1) translateY(-70px); opacity: 0; }
         }
       `}</style>
     </div>

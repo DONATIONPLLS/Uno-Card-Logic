@@ -16,7 +16,7 @@ import {
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
 import { RulesPanel } from "@/components/RulesPanel";
-import { Avatar } from "@/components/Avatar";
+import { Avatar, type AvatarTone } from "@/components/Avatar";
 import { sfx } from "@/lib/sounds";
 
 const colorSwatch: Record<UnoColor, string> = {
@@ -24,6 +24,13 @@ const colorSwatch: Record<UnoColor, string> = {
   yellow: "bg-[hsl(48_100%_50%)]",
   green: "bg-[hsl(140_70%_38%)]",
   blue: "bg-[hsl(215_85%_45%)]",
+};
+
+const impactHex: Record<UnoColor, string> = {
+  red: "#ef4444",
+  yellow: "#facc15",
+  green: "#22c55e",
+  blue: "#3b82f6",
 };
 
 type SeatPos = "top" | "left" | "right";
@@ -39,6 +46,14 @@ export interface GameActions {
   draw: () => void;
   endTurn: () => void;
   resolveSwap: (targetIdx: number) => void;
+}
+
+interface Flight {
+  id: string;
+  card: UnoCard;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  faceDown: boolean;
 }
 
 export function GameBoard({
@@ -73,9 +88,17 @@ export function GameBoard({
   const lastHumanRef = useRef<number | null>(null);
   const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
   const wonRef = useRef(false);
-  const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState<{ text: string; color: UnoColor | "white" } | null>(null);
   const lastTopRef = useRef<UnoCard | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Refs for flight animation start/end positions
+  const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const drawPileRef = useRef<HTMLDivElement | null>(null);
+  const discardRef = useRef<HTMLDivElement | null>(null);
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
+  const prevGameRef = useRef<GameState>(game);
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
@@ -86,6 +109,10 @@ export function GameBoard({
   const upNext = game.players[upNextIdx];
   const viewerPlayer = game.players[handViewIdx];
   const viewerIsBot = viewerPlayer?.kind === "bot";
+  const visibleTop =
+    suppressedTopId && suppressedTopId === top.id && game.discardPile.length >= 2
+      ? game.discardPile[game.discardPile.length - 2]
+      : top;
 
   const act: GameActions = actions ?? {
     play: (cardId, color) => setGame((g) => playCard(g, g.currentPlayer, cardId, color)),
@@ -94,11 +121,73 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
+  // ===== Card flight animations =====
+  useEffect(() => {
+    const prev = prevGameRef.current;
+    prevGameRef.current = game;
+    if (prev === game) return;
+
+    const newFlights: Flight[] = [];
+    let newTopSuppress: string | null = null;
+    const now = Date.now();
+
+    game.players.forEach((_, i) => {
+      const before = prev.hands[i]?.length ?? 0;
+      const after = game.hands[i]?.length ?? 0;
+      const delta = after - before;
+      const seat = seatRefs.current[i];
+
+      if (delta === -1 && game.discardPile.length === prev.discardPile.length + 1) {
+        // play
+        const playedCard = game.discardPile[game.discardPile.length - 1];
+        const dst = discardRef.current;
+        if (seat && dst && playedCard) {
+          const s = seat.getBoundingClientRect();
+          const d = dst.getBoundingClientRect();
+          newFlights.push({
+            id: `play-${playedCard.id}-${now}`,
+            card: playedCard,
+            start: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
+            end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
+            faceDown: false,
+          });
+          newTopSuppress = playedCard.id;
+        }
+      } else if (delta > 0 && delta <= 4) {
+        // draws
+        const src = drawPileRef.current;
+        if (seat && src) {
+          const s = src.getBoundingClientRect();
+          const d = seat.getBoundingClientRect();
+          for (let k = 0; k < delta; k++) {
+            newFlights.push({
+              id: `draw-${i}-${now}-${k}`,
+              card: { id: `fly-${now}-${k}`, color: "wild", value: "wild" } as UnoCard,
+              start: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
+              end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
+              faceDown: true,
+            });
+          }
+        }
+      }
+    });
+
+    if (newFlights.length === 0) return;
+    setFlights((prev) => [...prev, ...newFlights]);
+    if (newTopSuppress) setSuppressedTopId(newTopSuppress);
+    const ids = newFlights.map((f) => f.id);
+    const t = setTimeout(() => {
+      setFlights((prev) => prev.filter((f) => !ids.includes(f.id)));
+      if (newTopSuppress) setSuppressedTopId(null);
+    }, 520);
+    return () => clearTimeout(t);
+  }, [game]);
+
   useEffect(() => {
     if (game.winner !== null && !wonRef.current) {
       wonRef.current = true;
       sfx.win();
-      setAnnouncement(`🎉 ${nameOf(game.players[game.winner])} WINS!`);
+      setAnnouncement({ text: `${nameOf(game.players[game.winner])} WINS!`, color: "white" });
       const t = setTimeout(() => setAnnouncement(null), 2400);
       return () => clearTimeout(t);
     }
@@ -120,12 +209,13 @@ export function GameBoard({
       case "7": if (game.houseRules.sevenZero) msg = "SWAP!"; break;
     }
     if (msg) {
-      setAnnouncement(msg);
+      const c: UnoColor | "white" = top.color === "wild" ? game.activeColor : top.color;
+      setAnnouncement({ text: msg, color: c });
       const t = setTimeout(() => setAnnouncement(null), 1500);
       return () => clearTimeout(t);
     }
     return undefined;
-  }, [top, game.houseRules.sevenZero]);
+  }, [top, game.houseRules.sevenZero, game.activeColor]);
 
   useEffect(() => {
     if (!isPassAndPlay) {
@@ -169,7 +259,7 @@ export function GameBoard({
     }
   }, [revealed, currentIdx, currentPlayer?.kind]);
 
-  // Bot loop with random pacing
+  // Bot loop
   useEffect(() => {
     if (!enableBots) return;
     if (game.winner !== null) return;
@@ -343,6 +433,13 @@ export function GameBoard({
     ? "radial-gradient(ellipse at center, #1d1f23 0%, #0d0e10 60%, #000 100%)"
     : "radial-gradient(ellipse at center, hsl(140 60% 18%) 0%, hsl(140 60% 10%) 55%, #000 100%)";
 
+  const toneFor = (idx: number): AvatarTone => {
+    if (idx === handViewIdx) return "viewer";
+    if (idx === currentIdx) return "active";
+    if (idx === upNextIdx && currentIdx !== idx) return "next";
+    return "idle";
+  };
+
   return (
     <div
       className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
@@ -396,9 +493,9 @@ export function GameBoard({
               hand={game.hands[seatAt("top")!.idx]}
               player={game.players[seatAt("top")!.idx]}
               idx={seatAt("top")!.idx}
-              active={currentIdx === seatAt("top")!.idx}
-              upNext={upNextIdx === seatAt("top")!.idx && currentIdx !== seatAt("top")!.idx}
+              tone={toneFor(seatAt("top")!.idx)}
               flipMode={flipMode}
+              avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
             />
           ) : null}
         </div>
@@ -409,9 +506,9 @@ export function GameBoard({
               hand={game.hands[seatAt("left")!.idx]}
               player={game.players[seatAt("left")!.idx]}
               idx={seatAt("left")!.idx}
-              active={currentIdx === seatAt("left")!.idx}
-              upNext={upNextIdx === seatAt("left")!.idx && currentIdx !== seatAt("left")!.idx}
+              tone={toneFor(seatAt("left")!.idx)}
               flipMode={flipMode}
+              avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
             />
           ) : null}
         </div>
@@ -422,9 +519,9 @@ export function GameBoard({
               hand={game.hands[seatAt("right")!.idx]}
               player={game.players[seatAt("right")!.idx]}
               idx={seatAt("right")!.idx}
-              active={currentIdx === seatAt("right")!.idx}
-              upNext={upNextIdx === seatAt("right")!.idx && currentIdx !== seatAt("right")!.idx}
+              tone={toneFor(seatAt("right")!.idx)}
               flipMode={flipMode}
+              avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
             />
           ) : null}
         </div>
@@ -448,19 +545,21 @@ export function GameBoard({
                 : "opacity-70"
             } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
           >
-            <UnoCardView
-              card={{ id: "back", color: "wild", value: "wild" }}
-              faceDown
-              flipMode={flipMode}
-              size="md"
-            />
+            <div ref={drawPileRef}>
+              <UnoCardView
+                card={{ id: "back", color: "wild", value: "wild" }}
+                faceDown
+                flipMode={flipMode}
+                size="md"
+              />
+            </div>
             <span className="text-[10px] text-white/70">
               {hasDrawnThisTurn ? "Drew" : drawArmed ? "Tap again" : "Draw"} ({game.drawPile.length})
             </span>
           </button>
           <div className="flex flex-col items-center gap-1">
-            <div key={top.id} className="animate-[flyIn_.35s_ease-out]">
-              <UnoCardView card={top} disabled size="md" highlightColor={game.activeColor} />
+            <div ref={discardRef} key={visibleTop.id} className="animate-[flyIn_.35s_ease-out]">
+              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
             </div>
             <span className="text-[10px] text-white/60">Top</span>
           </div>
@@ -469,15 +568,20 @@ export function GameBoard({
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div
-              className="font-black tracking-wider text-white animate-[impactText_1.5s_ease-out_forwards]"
+              className="font-black tracking-wider animate-[impactPop_1.5s_cubic-bezier(.22,1.6,.36,1)_forwards] select-none"
               style={{
-                fontSize: "clamp(2.5rem, 8vw, 5rem)",
-                WebkitTextStroke: "3px black",
-                textShadow: "0 6px 18px rgba(0,0,0,0.7), 0 0 30px rgba(255,255,255,0.3)",
-                letterSpacing: "0.03em",
+                color:
+                  announcement.color === "white"
+                    ? "#ffffff"
+                    : impactHex[announcement.color],
+                WebkitTextStroke: "2px #1a1a1a",
+                fontSize: "clamp(3rem, 11vw, 6rem)",
+                letterSpacing: "0.04em",
+                textShadow: "0 6px 24px rgba(0,0,0,0.55)",
+                fontStyle: "italic",
               }}
             >
-              {announcement}
+              {announcement.text}
             </div>
           </div>
         ) : null}
@@ -493,13 +597,15 @@ export function GameBoard({
       <div className="border-t border-white/10 pt-2 pb-3 bg-black/55 backdrop-blur-xl z-10">
         <div className="flex items-center justify-between mb-2 px-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <Avatar
-              name={viewerPlayer?.name ?? "?"}
-              idx={handViewIdx}
-              kind={viewerPlayer?.kind ?? "human"}
-              size="sm"
-              glow={myTurn}
-            />
+            <div ref={(el) => { seatRefs.current[handViewIdx] = el; }}>
+              <Avatar
+                name={viewerPlayer?.name ?? "?"}
+                idx={handViewIdx}
+                kind={viewerPlayer?.kind ?? "human"}
+                size="sm"
+                tone={myTurn ? "active" : "viewer"}
+              />
+            </div>
             <span className="text-sm font-semibold truncate">
               {viewerPlayer?.name}
               {viewerIsBot ? " (AI)" : ""} ({myHand.length})
@@ -508,7 +614,6 @@ export function GameBoard({
               <span className="text-[10px] text-white/50 ml-1">waiting…</span>
             ) : null}
           </div>
-          {/* Primary action button — moved here so it can never be clipped */}
           {selectedId && selectedPlayable ? (
             <button
               onClick={confirmPlay}
@@ -574,6 +679,28 @@ export function GameBoard({
             AI turn — cards hidden
           </div>
         ) : null}
+      </div>
+
+      {/* Card flight overlay */}
+      <div className="fixed inset-0 pointer-events-none z-40">
+        {flights.map((f) => (
+          <div
+            key={f.id}
+            className="absolute"
+            style={{
+              left: 0,
+              top: 0,
+              animation: "flyTo .5s cubic-bezier(.34,1.56,.64,1) forwards",
+              ["--sx" as any]: `${f.start.x - 32}px`,
+              ["--sy" as any]: `${f.start.y - 48}px`,
+              ["--ex" as any]: `${f.end.x - 32}px`,
+              ["--ey" as any]: `${f.end.y - 48}px`,
+              willChange: "transform, opacity",
+            }}
+          >
+            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" />
+          </div>
+        ))}
       </div>
 
       {pickColorFor ? (
@@ -669,29 +796,24 @@ function SeatView({
   hand,
   player,
   idx,
-  active,
-  upNext,
+  tone,
   flipMode,
+  avatarRef,
 }: {
   orientation: "horizontal" | "vertical";
   hand: UnoCard[];
   player: { name: string; kind: "human" | "bot" };
   idx: number;
-  active: boolean;
-  upNext?: boolean;
+  tone: AvatarTone;
   flipMode?: boolean;
+  avatarRef?: (el: HTMLDivElement | null) => void;
 }) {
   const shown = hand.slice(0, 7);
   const extra = hand.length - shown.length;
-  const ringClass = active
-    ? "ring-2 ring-[hsl(140_80%_55%)] shadow-[0_0_18px_-2px_hsl(140_80%_55%/.7)] rounded-full"
-    : upNext
-    ? "ring-2 ring-[hsl(28_95%_60%)] shadow-[0_0_14px_-3px_hsl(28_95%_60%/.6)] rounded-full"
-    : "";
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className={ringClass}>
-        <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" />
+      <div ref={avatarRef}>
+        <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" tone={tone} />
       </div>
       <div className="text-[10px] text-white/70 text-center max-w-[90px] truncate">
         {player.name}
@@ -740,9 +862,9 @@ function PassOverlay({
       ? "Take the phone back."
       : "Pass the phone — only this player should see the next screen.";
   return (
-    <div className="fixed inset-0 z-40 bg-gradient-to-br from-[hsl(0_60%_15%)] via-black to-black flex flex-col items-center justify-center px-6 text-center animate-[fadeIn_.2s_ease-out]">
+    <div className="fixed inset-0 z-50 bg-gradient-to-br from-[hsl(0_60%_15%)] via-black to-black flex flex-col items-center justify-center px-6 text-center animate-[fadeIn_.2s_ease-out]">
       <div className="mb-4">
-        <Avatar name={name} idx={idx} kind="human" size="lg" glow />
+        <Avatar name={name} idx={idx} kind="human" size="lg" tone="viewer" />
       </div>
       <div className="text-xs uppercase tracking-widest text-white/50 font-bold mb-2">
         {variant === "yourturn" ? "Heads up" : "Pass the phone"}
