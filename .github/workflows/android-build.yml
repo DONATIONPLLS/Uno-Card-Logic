@@ -31,9 +31,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Deep Clean Replit Junk
+      - name: Clean package.json
         run: |
-          # 1. Clean package.json
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -50,15 +49,29 @@ jobs:
             clean(pkg.devDependencies);
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
           "
-          # 2. Surgically remove Replit plugins from vite.config.ts
-          # This replaces Replit plugin calls with empty strings so they don't break the build
-          sed -i 's/import.*@replit.*//g' vite.config.ts
-          sed -i 's/runtimeErrorOverlay()//g' vite.config.ts
-          sed -i 's/cartographer()//g' vite.config.ts
         working-directory: artifacts/uno-buddy
 
-      - name: Install Game Dependencies & Build Tools
-        # We explicitly add the missing Tailwind and Vite tools back
+      - name: Create Clean Vite Config
+        # This overwrites the messy Replit config with a standard one
+        run: |
+          cat <<EOF > vite.config.ts
+          import { defineConfig } from 'vite';
+          import react from '@vitejs/plugin-react';
+          import tailwindcss from '@tailwindcss/vite';
+
+          export default defineConfig({
+            plugins: [react(), tailwindcss()],
+            build: {
+              outDir: 'dist',
+            },
+            server: {
+              host: '0.0.0.0',
+            }
+          });
+          EOF
+        working-directory: artifacts/uno-buddy
+
+      - name: Install Dependencies
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
           pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite
