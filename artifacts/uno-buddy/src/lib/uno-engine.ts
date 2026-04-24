@@ -73,8 +73,18 @@ const ACTIONS: CardValue[] = ["skip", "reverse", "draw2"];
 let idCounter = 0;
 const nextId = () => `c${++idCounter}`;
 
-export function buildDeck(): UnoCard[] {
+export function buildDeck(allWild = false): UnoCard[] {
   const deck: UnoCard[] = [];
+  if (allWild) {
+    // Pure wild deck — only Wild and Wild Draw 4 cards.
+    for (let i = 0; i < 36; i++) {
+      deck.push({ id: nextId(), color: "wild", value: "wild" });
+    }
+    for (let i = 0; i < 24; i++) {
+      deck.push({ id: nextId(), color: "wild", value: "wild4" });
+    }
+    return deck;
+  }
   for (const color of COLORS) {
     deck.push({ id: nextId(), color, value: "0" });
     for (const n of NUMBERS.slice(1)) {
@@ -131,16 +141,23 @@ export interface NewGameOptions {
 export function dealNewGame(opts: NewGameOptions): GameState {
   const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
   const players = opts.players;
-  let deck = shuffle(buildDeck());
+  let deck = shuffle(buildDeck(houseRules.allWild));
   const hands: UnoCard[][] = [];
   for (let p = 0; p < players.length; p++) {
     hands.push(deck.splice(0, 7));
   }
-  let firstIdx = deck.findIndex(
-    (c) => c.color !== "wild" && !["skip", "reverse", "draw2"].includes(c.value),
-  );
-  if (firstIdx === -1) firstIdx = 0;
-  const first = deck.splice(firstIdx, 1)[0];
+  let first: UnoCard;
+  if (houseRules.allWild) {
+    first = deck.splice(0, 1)[0];
+  } else {
+    let firstIdx = deck.findIndex(
+      (c) => c.color !== "wild" && !["skip", "reverse", "draw2"].includes(c.value),
+    );
+    if (firstIdx === -1) firstIdx = 0;
+    first = deck.splice(firstIdx, 1)[0];
+  }
+  const startColor: UnoColor =
+    first.color === "wild" ? COLORS[Math.floor(Math.random() * 4)] : (first.color as UnoColor);
   return {
     drawPile: deck,
     discardPile: [first],
@@ -150,7 +167,7 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     mode: opts.mode ?? "standard",
     currentPlayer: 0,
     direction: 1,
-    activeColor: first.color === "wild" ? "red" : (first.color as UnoColor),
+    activeColor: startColor,
     pendingDraw: 0,
     pendingAction: null,
     log: [`Game started. Top card: ${describe(first)}.`, `${nameOf(players[0])} starts.`],

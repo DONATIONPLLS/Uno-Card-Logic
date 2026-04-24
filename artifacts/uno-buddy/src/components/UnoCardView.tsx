@@ -38,6 +38,7 @@ export function UnoCardView({
   size = "md",
   small,
   highlightColor,
+  flipMode,
 }: {
   card: UnoCard;
   onClick?: () => void;
@@ -46,11 +47,36 @@ export function UnoCardView({
   size?: CardSize;
   small?: boolean;
   highlightColor?: "red" | "yellow" | "green" | "blue";
+  flipMode?: boolean;
 }) {
   if (small && size === "md") size = "sm";
   const s = sizeMap[size];
 
   if (faceDown) {
+    if (flipMode) {
+      return (
+        <div
+          className={`${s.box} rounded-xl border-[3px] border-white/30 flex items-center justify-center shadow-md select-none overflow-hidden relative`}
+          style={{
+            background:
+              "linear-gradient(135deg, #1a1a1f 0%, #2a2a30 50%, #0e0e12 100%)",
+          }}
+        >
+          <div
+            className={`${s.back} rounded-full -rotate-12 flex items-center justify-center`}
+            style={{
+              background:
+                "linear-gradient(135deg, #0a0a0a 0%, #25252a 100%)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <span className="text-white/85 font-black italic tracking-tight leading-none drop-shadow-[0_0_2px_rgba(0,0,0,1)]">
+              UNO
+            </span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div
         className={`${s.box} rounded-xl bg-[hsl(0_75%_18%)] border-[3px] border-white flex items-center justify-center shadow-md select-none overflow-hidden`}

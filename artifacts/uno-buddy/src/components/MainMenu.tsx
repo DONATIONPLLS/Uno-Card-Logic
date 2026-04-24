@@ -2,14 +2,12 @@ export function MainMenu({
   hasSavedGame,
   onContinue,
   onNew,
-  onLocalMultiplayer,
   onScoring,
   onRules,
 }: {
   hasSavedGame: boolean;
   onContinue: () => void;
   onNew: () => void;
-  onLocalMultiplayer: () => void;
   onScoring: () => void;
   onRules: () => void;
 }) {
@@ -18,57 +16,54 @@ export function MainMenu({
       className="min-h-screen relative overflow-hidden flex flex-col items-center justify-between px-6 py-10"
       style={{
         background:
-          "radial-gradient(ellipse 60% 60% at 20% 0%, hsl(0 80% 35% / 0.85), transparent 60%), radial-gradient(ellipse 60% 60% at 90% 20%, hsl(48 95% 45% / 0.75), transparent 60%), radial-gradient(ellipse 70% 70% at 50% 100%, hsl(215 80% 35% / 0.85), transparent 60%), radial-gradient(ellipse 50% 50% at 0% 100%, hsl(140 70% 30% / 0.7), transparent 60%), #0a0a0a",
+          "radial-gradient(ellipse 60% 60% at 20% 10%, hsl(0 70% 28% / 0.85), transparent 60%), radial-gradient(ellipse 60% 60% at 90% 25%, hsl(48 80% 38% / 0.55), transparent 60%), radial-gradient(ellipse 70% 70% at 50% 95%, hsl(215 70% 28% / 0.85), transparent 60%), radial-gradient(ellipse 50% 50% at 5% 100%, hsl(140 65% 22% / 0.7), transparent 60%), #050505",
       }}
     >
-      {/* Floating blurred color blobs */}
-      <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 bg-[hsl(0_85%_50%)]/30 blur-3xl rounded-full" />
-      <div className="pointer-events-none absolute top-1/3 -right-24 w-80 h-80 bg-[hsl(48_100%_50%)]/25 blur-3xl rounded-full" />
-      <div className="pointer-events-none absolute -bottom-20 left-1/4 w-80 h-80 bg-[hsl(215_85%_50%)]/30 blur-3xl rounded-full" />
+      {/* Soft floating blurred color blobs */}
+      <div className="pointer-events-none absolute -top-24 -left-24 w-72 h-72 bg-[hsl(0_85%_50%)]/20 blur-[120px] rounded-full" />
+      <div className="pointer-events-none absolute top-1/3 -right-24 w-80 h-80 bg-[hsl(48_100%_50%)]/15 blur-[120px] rounded-full" />
+      <div className="pointer-events-none absolute -bottom-24 left-1/4 w-80 h-80 bg-[hsl(215_85%_50%)]/20 blur-[120px] rounded-full" />
 
-      <div className="relative flex-1 flex flex-col items-center justify-center gap-5 text-center">
-        <div className="relative">
-          <div className="absolute -inset-8 bg-white/5 backdrop-blur-2xl rounded-full" />
-          <h1 className="relative text-7xl sm:text-8xl font-black italic tracking-tight drop-shadow-2xl">
+      <div className="relative flex-1 flex flex-col items-center justify-center gap-6 text-center w-full">
+        <div className="relative inline-flex flex-col items-center">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-44 rounded-full bg-white/5 backdrop-blur-2xl border border-white/10 shadow-[inset_0_0_40px_rgba(255,255,255,0.05)]" />
+          <h1 className="relative text-7xl font-black italic tracking-tight">
             <span className="text-[hsl(0_85%_60%)]">U</span>
             <span className="text-[hsl(48_100%_60%)]">N</span>
             <span className="text-[hsl(140_70%_50%)]">O</span>
           </h1>
-          <div className="text-2xl font-bold text-white/95 tracking-[0.4em] mt-1">
+          <div className="relative text-[11px] font-semibold text-white/70 tracking-[0.55em] mt-2 pl-[0.55em]">
             BUDDY
           </div>
         </div>
-        <p className="text-white/70 text-sm max-w-xs">
-          Your offline scorekeeper, rulebook, and digital deck — all in one.
+        <p className="text-white/55 text-sm max-w-[260px] leading-relaxed">
+          Your offline scorekeeper, rulebook, and digital deck — all in one place.
         </p>
       </div>
 
       <div className="relative w-full max-w-sm flex flex-col gap-3">
         {hasSavedGame ? (
-          <GlassButton onClick={onContinue} accent="emerald">
-            ▶ Continue Game
-          </GlassButton>
+          <SoftButton onClick={onContinue} accent="emerald">
+            Continue Game
+          </SoftButton>
         ) : null}
-        <GlassButton onClick={onNew} accent="red">
+        <SoftButton onClick={onNew} accent="primary">
           Start New Game
-        </GlassButton>
-        <GlassButton onClick={onLocalMultiplayer} accent="violet">
-          Local Multiplayer
-        </GlassButton>
+        </SoftButton>
         <div className="grid grid-cols-2 gap-3">
-          <GlassButton onClick={onScoring} accent="blue" small>
+          <SoftButton onClick={onScoring} accent="ghost" small>
             Scoring
-          </GlassButton>
-          <GlassButton onClick={onRules} accent="neutral" small>
+          </SoftButton>
+          <SoftButton onClick={onRules} accent="ghost" small>
             Rules
-          </GlassButton>
+          </SoftButton>
         </div>
       </div>
     </div>
   );
 }
 
-function GlassButton({
+function SoftButton({
   children,
   onClick,
   accent,
@@ -76,29 +71,24 @@ function GlassButton({
 }: {
   children: React.ReactNode;
   onClick: () => void;
-  accent: "red" | "blue" | "emerald" | "violet" | "neutral";
+  accent: "primary" | "emerald" | "ghost";
   small?: boolean;
 }) {
-  const accentBg: Record<string, string> = {
-    red: "from-[hsl(0_85%_55%)]/90 to-[hsl(0_75%_40%)]/90",
-    blue: "from-[hsl(215_85%_55%)]/90 to-[hsl(215_75%_38%)]/90",
-    emerald: "from-[hsl(140_70%_50%)]/90 to-[hsl(140_70%_32%)]/90",
-    violet: "from-[hsl(280_70%_60%)]/90 to-[hsl(260_70%_42%)]/90",
-    neutral: "from-white/15 to-white/5",
+  const styles: Record<string, string> = {
+    primary:
+      "bg-gradient-to-b from-white/10 to-white/[0.04] border-white/15 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_30px_-12px_rgba(255,255,255,0.25)]",
+    emerald:
+      "bg-gradient-to-b from-[hsl(140_60%_45%)]/30 to-[hsl(140_60%_25%)]/20 border-[hsl(140_60%_50%)]/30 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_30px_-12px_hsl(140_60%_50%/.4)]",
+    ghost:
+      "bg-white/[0.04] border-white/10 text-white/85",
   };
   return (
     <button
       onClick={onClick}
-      className={`group relative w-full ${small ? "py-3" : "py-4"} rounded-2xl text-white font-bold ${
-        small ? "text-sm" : "text-lg"
-      } overflow-hidden border border-white/20 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.35)] active:scale-[.98] transition`}
+      className={`group relative w-full ${small ? "py-3 text-sm" : "py-4 text-base"} rounded-2xl font-semibold tracking-wide overflow-hidden border backdrop-blur-xl transition active:scale-[.98] hover:border-white/30 ${styles[accent]}`}
     >
-      <span
-        className={`absolute inset-0 bg-gradient-to-br ${accentBg[accent]}`}
-      />
-      <span className="absolute inset-0 bg-white/5 opacity-0 group-active:opacity-100 transition" />
-      <span className="absolute top-0 inset-x-0 h-1/2 bg-gradient-to-b from-white/15 to-transparent" />
-      <span className="relative tracking-wide">{children}</span>
+      <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+      <span className="relative">{children}</span>
     </button>
   );
 }

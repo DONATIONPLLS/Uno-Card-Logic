@@ -53,14 +53,14 @@ export function GameBoard({
   game: GameState;
   setGame: (updater: (g: GameState) => GameState) => void;
   onExit: () => void;
-  viewerIdx?: number;       // fixed POV for multiplayer; otherwise pass-and-play
-  actions?: GameActions;    // optional remote action handler
+  viewerIdx?: number;
+  actions?: GameActions;
   enableBots?: boolean;
-  passAndPlay?: boolean;    // if true, show privacy overlays
+  passAndPlay?: boolean;
 }) {
-  // If viewerIdx is set, that's whose hand we always show. Otherwise show currentPlayer's.
   const isPassAndPlay = passAndPlay ?? viewerIdx === undefined;
   const handViewIdx = viewerIdx ?? game.currentPlayer;
+  const flipMode = game.mode === "flip";
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickColorFor, setPickColorFor] = useState<string | null>(null);
@@ -84,8 +84,9 @@ export function GameBoard({
   const top = game.discardPile[game.discardPile.length - 1];
   const upNextIdx = nextPlayer(game);
   const upNext = game.players[upNextIdx];
+  const viewerPlayer = game.players[handViewIdx];
+  const viewerIsBot = viewerPlayer?.kind === "bot";
 
-  // Default actions = direct local mutation
   const act: GameActions = actions ?? {
     play: (cardId, color) => setGame((g) => playCard(g, g.currentPlayer, cardId, color)),
     draw: () => setGame((g) => drawOne(g, g.currentPlayer)),
@@ -93,7 +94,6 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-  // Win sound + win banner
   useEffect(() => {
     if (game.winner !== null && !wonRef.current) {
       wonRef.current = true;
@@ -105,7 +105,6 @@ export function GameBoard({
     return undefined;
   }, [game.winner, game.players]);
 
-  // Action announcements driven by discard top changes
   useEffect(() => {
     const prev = lastTopRef.current;
     lastTopRef.current = top;
@@ -128,7 +127,6 @@ export function GameBoard({
     return undefined;
   }, [top, game.houseRules.sevenZero]);
 
-  // Smart privacy logic — only for pass-and-play
   useEffect(() => {
     if (!isPassAndPlay) {
       setRevealed(true);
@@ -154,32 +152,24 @@ export function GameBoard({
       setOverlayKind(null);
       return;
     }
-    // Human turn — only show overlay when the human is different from the previous human player
     const lastHuman = lastHumanRef.current;
     if (lastHuman === currentIdx) {
-      // Same human as last time (e.g., bots played in between). Keep table revealed.
       setRevealed(true);
       setOverlayKind(null);
       sfx.ding();
-    } else if (lastHuman === null) {
-      // Very first human turn
-      setRevealed(false);
-      setOverlayKind("pass");
     } else {
-      // Different human from last time — privacy needed
       setRevealed(false);
       setOverlayKind("pass");
     }
   }, [currentIdx, game.players, game.winner, isPassAndPlay]);
 
-  // Track lastHumanRef once they actually reveal
   useEffect(() => {
     if (revealed && currentPlayer?.kind === "human") {
       lastHumanRef.current = currentIdx;
     }
   }, [revealed, currentIdx, currentPlayer?.kind]);
 
-  // Bot loop with random 1.2-2.0s pacing
+  // Bot loop with random pacing
   useEffect(() => {
     if (!enableBots) return;
     if (game.winner !== null) return;
@@ -212,7 +202,16 @@ export function GameBoard({
         const afterDraw = drawOne(g, idx);
         if (afterDraw === g) return g;
         const newCard = afterDraw.hands[idx][afterDraw.hands[idx].length - 1];
-        if (newCard && isValidMove(newCard, afterDraw.discardPile[afterDraw.discardPile.length - 1], afterDraw.activeColor, afterDraw.pendingDraw, afterDraw.houseRules)) {
+        if (
+          newCard &&
+          isValidMove(
+            newCard,
+            afterDraw.discardPile[afterDraw.discardPile.length - 1],
+            afterDraw.activeColor,
+            afterDraw.pendingDraw,
+            afterDraw.houseRules,
+          )
+        ) {
           const followUp = chooseBotMove(afterDraw, idx);
           if (followUp.type === "play") {
             setTimeout(() => sfx.swish(), 400);
@@ -225,14 +224,12 @@ export function GameBoard({
     return () => clearTimeout(t);
   }, [game.currentPlayer, game.winner, game.pendingAction, currentPlayer, setGame, enableBots]);
 
-  // Edge-clip fix
   useEffect(() => {
     if (!selectedId) return;
     const el = cardRefs.current[selectedId];
     if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [selectedId]);
 
-  // Reset per-turn state for fixed-viewer modes
   useEffect(() => {
     if (isPassAndPlay) return;
     setSelectedId(null);
@@ -242,7 +239,7 @@ export function GameBoard({
   }, [currentIdx, isPassAndPlay]);
 
   const onCardTap = (cardId: string) => {
-    if (!myTurn || !revealed) return;
+    if (!myTurn || !revealed || viewerIsBot) return;
     if (game.pendingAction !== null) return;
     const card = game.hands[handViewIdx].find((c) => c.id === cardId);
     if (!card) return;
@@ -285,7 +282,7 @@ export function GameBoard({
   };
 
   const onDrawPileTap = () => {
-    if (!myTurn || !revealed) return;
+    if (!myTurn || !revealed || viewerIsBot) return;
     if (game.pendingAction !== null) return;
     if (selectedId) {
       setSelectedId(null);
@@ -317,19 +314,23 @@ export function GameBoard({
     if (
       game.pendingAction?.type === "swap7" &&
       game.pendingAction.from === handViewIdx &&
-      revealed
+      revealed &&
+      !viewerIsBot
     ) {
       setSwapPickerFor(game.pendingAction.from);
     } else {
       setSwapPickerFor(null);
     }
-  }, [game.pendingAction, handViewIdx, revealed]);
+  }, [game.pendingAction, handViewIdx, revealed, viewerIsBot]);
 
   const myHand = game.hands[handViewIdx] ?? [];
-  const playableExists = myTurn && hasPlayableCard(game, handViewIdx);
+  const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
   const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
+  const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
+  const selectedPlayable =
+    selectedCard !== null &&
+    isValidMove(selectedCard, top, game.activeColor, game.pendingDraw, game.houseRules);
 
-  // Seat assignments — viewers own the bottom seat
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
   const positions = seatLayout(game.players.length);
   const seated: { pos: SeatPos; idx: number }[] = otherIdxs.map((idx, i) => ({
@@ -338,55 +339,55 @@ export function GameBoard({
   }));
   const seatAt = (pos: SeatPos) => seated.find((s) => s.pos === pos);
 
+  const tableBg = flipMode
+    ? "radial-gradient(ellipse at center, #1d1f23 0%, #0d0e10 60%, #000 100%)"
+    : "radial-gradient(ellipse at center, hsl(140 60% 18%) 0%, hsl(140 60% 10%) 55%, #000 100%)";
+
   return (
     <div
-      className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.2s_ease-out]"
-      style={{
-        background:
-          "radial-gradient(ellipse at center, hsl(140 60% 18%) 0%, hsl(140 60% 10%) 55%, #000 100%)",
-      }}
+      className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
+      style={{ background: tableBg }}
     >
-      <header className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-black/40 z-10">
+      <header className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-black/40 backdrop-blur-xl z-10 gap-2">
         <button
           onClick={onExit}
-          className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center"
+          className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0"
           aria-label="Menu"
         >
           ←
         </button>
-        <div className="flex flex-col items-center min-w-0 leading-tight">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs text-white/50">Now playing:</span>
-            <span className="text-sm font-bold truncate">
-              {currentPlayer?.name}
-              {currentPlayer?.kind === "bot" ? " (AI)" : ""}
-            </span>
-            <span
-              className={`w-3 h-3 rounded-full ${colorSwatch[game.activeColor]} border border-white/40`}
-            />
-            {game.pendingDraw > 0 ? (
-              <span className="ml-1 px-2 py-0.5 rounded bg-red-500/40 text-red-50 text-[10px] font-bold">
-                +{game.pendingDraw}
-              </span>
-            ) : null}
-          </div>
+        <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
+          <TurnBadge
+            label="Now"
+            name={`${currentPlayer?.name}${currentPlayer?.kind === "bot" ? " (AI)" : ""}`}
+            tone="green"
+          />
+          <span
+            className={`w-3 h-3 rounded-full ${colorSwatch[game.activeColor]} border border-white/40 shrink-0`}
+            title={`Active color: ${game.activeColor}`}
+          />
           {upNext && game.winner === null ? (
-            <div className="text-[10px] text-white/50 mt-0.5">
-              Next up: <span className="text-white/80 font-semibold">{upNext.name}</span>
-              {upNext.kind === "bot" ? " (AI)" : ""}
-            </div>
+            <TurnBadge
+              label="Next"
+              name={`${upNext.name}${upNext.kind === "bot" ? " (AI)" : ""}`}
+              tone="orange"
+            />
+          ) : null}
+          {game.pendingDraw > 0 ? (
+            <span className="px-2 py-0.5 rounded bg-red-500/40 text-red-50 text-[10px] font-bold shrink-0">
+              +{game.pendingDraw}
+            </span>
           ) : null}
         </div>
         <button
           onClick={() => setShowRules(true)}
-          className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center font-bold text-sm"
+          className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center font-bold text-sm shrink-0"
           aria-label="Rules"
         >
           ?
         </button>
       </header>
 
-      {/* Table */}
       <div className="flex-1 grid relative" style={tableGridStyle}>
         <div className="row-start-1 col-start-2 flex items-start justify-center pt-2">
           {seatAt("top") ? (
@@ -396,6 +397,8 @@ export function GameBoard({
               player={game.players[seatAt("top")!.idx]}
               idx={seatAt("top")!.idx}
               active={currentIdx === seatAt("top")!.idx}
+              upNext={upNextIdx === seatAt("top")!.idx && currentIdx !== seatAt("top")!.idx}
+              flipMode={flipMode}
             />
           ) : null}
         </div>
@@ -407,6 +410,8 @@ export function GameBoard({
               player={game.players[seatAt("left")!.idx]}
               idx={seatAt("left")!.idx}
               active={currentIdx === seatAt("left")!.idx}
+              upNext={upNextIdx === seatAt("left")!.idx && currentIdx !== seatAt("left")!.idx}
+              flipMode={flipMode}
             />
           ) : null}
         </div>
@@ -418,6 +423,8 @@ export function GameBoard({
               player={game.players[seatAt("right")!.idx]}
               idx={seatAt("right")!.idx}
               active={currentIdx === seatAt("right")!.idx}
+              upNext={upNextIdx === seatAt("right")!.idx && currentIdx !== seatAt("right")!.idx}
+              flipMode={flipMode}
             />
           ) : null}
         </div>
@@ -434,14 +441,19 @@ export function GameBoard({
               e.stopPropagation();
               onDrawPileTap();
             }}
-            disabled={!myTurn || !revealed || hasDrawnThisTurn || game.pendingAction !== null}
+            disabled={!myTurn || !revealed || hasDrawnThisTurn || game.pendingAction !== null || viewerIsBot}
             className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null
+              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot
                 ? "active:scale-95"
                 : "opacity-70"
             } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
           >
-            <UnoCardView card={{ id: "back", color: "wild", value: "wild" }} faceDown size="md" />
+            <UnoCardView
+              card={{ id: "back", color: "wild", value: "wild" }}
+              faceDown
+              flipMode={flipMode}
+              size="md"
+            />
             <span className="text-[10px] text-white/70">
               {hasDrawnThisTurn ? "Drew" : drawArmed ? "Tap again" : "Draw"} ({game.drawPile.length})
             </span>
@@ -454,7 +466,6 @@ export function GameBoard({
           </div>
         </div>
 
-        {/* Impact text overlay */}
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div
@@ -472,7 +483,6 @@ export function GameBoard({
         ) : null}
       </div>
 
-      {/* Game Log */}
       <div className="mx-3 mb-2 max-h-14 overflow-y-auto rounded-md bg-black/40 border border-white/10 px-3 py-1.5 text-[11px] text-white/80 space-y-0.5 z-10">
         {game.log.slice(0, 4).map((line, i) => (
           <div key={i}>{line}</div>
@@ -480,24 +490,33 @@ export function GameBoard({
       </div>
 
       {/* Hand */}
-      <div className="border-t border-white/10 pt-2 pb-3 bg-black/50 z-10">
-        <div className="flex items-center justify-between mb-1 px-3">
+      <div className="border-t border-white/10 pt-2 pb-3 bg-black/55 backdrop-blur-xl z-10">
+        <div className="flex items-center justify-between mb-2 px-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar
-              name={game.players[handViewIdx]?.name ?? "?"}
+              name={viewerPlayer?.name ?? "?"}
               idx={handViewIdx}
-              kind={game.players[handViewIdx]?.kind ?? "human"}
+              kind={viewerPlayer?.kind ?? "human"}
               size="sm"
               glow={myTurn}
             />
             <span className="text-sm font-semibold truncate">
-              {game.players[handViewIdx]?.name} ({myHand.length})
+              {viewerPlayer?.name}
+              {viewerIsBot ? " (AI)" : ""} ({myHand.length})
             </span>
             {!myTurn && game.winner === null ? (
               <span className="text-[10px] text-white/50 ml-1">waiting…</span>
             ) : null}
           </div>
-          {canPass ? (
+          {/* Primary action button — moved here so it can never be clipped */}
+          {selectedId && selectedPlayable ? (
+            <button
+              onClick={confirmPlay}
+              className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+            >
+              ✓ Play Card
+            </button>
+          ) : canPass ? (
             <button
               onClick={onPass}
               className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
@@ -513,10 +532,17 @@ export function GameBoard({
             </button>
           ) : null}
         </div>
-        <div className="overflow-x-auto pt-12 px-3 scroll-smooth">
+
+        <div
+          className="px-3 scroll-smooth"
+          style={{ overflowX: "auto", overflowY: "visible", paddingTop: "2.5rem" }}
+        >
           <div className="flex gap-2 items-end pb-2">
             {myHand.map((c) => {
-              const playable = myTurn && isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
+              const showFaceDown = viewerIsBot || (!revealed && myTurn && isPassAndPlay);
+              const playable =
+                myTurn && !viewerIsBot &&
+                isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
               const selected = selectedId === c.id;
               return (
                 <div
@@ -525,23 +551,13 @@ export function GameBoard({
                   className={`shrink-0 transition-transform duration-150 relative ${selected ? "-translate-y-8" : ""}`}
                   style={{ zIndex: selected ? 30 : 1 }}
                 >
-                  {selected && playable ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        confirmPlay();
-                      }}
-                      className="absolute left-1/2 -translate-x-1/2 -top-9 px-3 py-1 rounded-full bg-[hsl(140_70%_42%)] text-white text-xs font-bold shadow-lg active:scale-95 whitespace-nowrap z-40"
-                    >
-                      ✓ Play
-                    </button>
-                  ) : null}
                   <div className={`rounded-xl ${selected ? "ring-4 ring-white shadow-2xl" : ""}`}>
                     <UnoCardView
-                      card={revealed || !myTurn ? c : { ...c, color: "wild", value: "wild" }}
-                      onClick={() => onCardTap(c.id)}
-                      disabled={!myTurn || !revealed || (!playable && !selected)}
-                      faceDown={!revealed && myTurn && isPassAndPlay}
+                      card={showFaceDown ? { ...c, color: "wild", value: "wild" } : c}
+                      onClick={viewerIsBot ? undefined : () => onCardTap(c.id)}
+                      disabled={!myTurn || !revealed || viewerIsBot || (!playable && !selected)}
+                      faceDown={showFaceDown}
+                      flipMode={flipMode}
                       size="lg"
                     />
                   </div>
@@ -553,6 +569,11 @@ export function GameBoard({
             ) : null}
           </div>
         </div>
+        {viewerIsBot ? (
+          <div className="text-center text-[11px] text-white/45 mt-1">
+            AI turn — cards hidden
+          </div>
+        ) : null}
       </div>
 
       {pickColorFor ? (
@@ -615,25 +636,64 @@ const tableGridStyle: React.CSSProperties = {
   minHeight: "260px",
 };
 
+function TurnBadge({
+  label,
+  name,
+  tone,
+}: {
+  label: string;
+  name: string;
+  tone: "green" | "orange";
+}) {
+  const styles =
+    tone === "green"
+      ? "border-[hsl(140_70%_50%)]/60 bg-[hsl(140_70%_42%)]/20 shadow-[0_0_16px_-2px_hsl(140_80%_55%/.7)]"
+      : "border-[hsl(28_95%_60%)]/55 bg-[hsl(28_95%_55%)]/15 shadow-[0_0_14px_-3px_hsl(28_95%_60%/.6)]";
+  const dot =
+    tone === "green" ? "bg-[hsl(140_80%_55%)]" : "bg-[hsl(28_95%_60%)]";
+  return (
+    <span
+      className={`flex items-center gap-1.5 px-2 py-1 rounded-full border backdrop-blur-md min-w-0 max-w-[40%] ${styles}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${dot} animate-pulse`} />
+      <span className="text-[9px] uppercase tracking-widest font-bold text-white/70">
+        {label}
+      </span>
+      <span className="text-[11px] font-semibold truncate">{name}</span>
+    </span>
+  );
+}
+
 function SeatView({
   orientation,
   hand,
   player,
   idx,
   active,
+  upNext,
+  flipMode,
 }: {
   orientation: "horizontal" | "vertical";
   hand: UnoCard[];
   player: { name: string; kind: "human" | "bot" };
   idx: number;
   active: boolean;
+  upNext?: boolean;
+  flipMode?: boolean;
 }) {
   const shown = hand.slice(0, 7);
   const extra = hand.length - shown.length;
+  const ringClass = active
+    ? "ring-2 ring-[hsl(140_80%_55%)] shadow-[0_0_18px_-2px_hsl(140_80%_55%/.7)] rounded-full"
+    : upNext
+    ? "ring-2 ring-[hsl(28_95%_60%)] shadow-[0_0_14px_-3px_hsl(28_95%_60%/.6)] rounded-full"
+    : "";
   return (
     <div className="flex flex-col items-center gap-1">
-      <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" glow={active} />
-      <div className="text-[10px] text-white/70 text-center max-w-[80px] truncate">
+      <div className={ringClass}>
+        <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" />
+      </div>
+      <div className="text-[10px] text-white/70 text-center max-w-[90px] truncate">
         {player.name}
         {player.kind === "bot" ? " (AI)" : ""}
         <div className="text-white/50">{hand.length} cards</div>
@@ -652,7 +712,7 @@ function SeatView({
               zIndex: i,
             }}
           >
-            <UnoCardView card={c} faceDown size="sm" />
+            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" />
           </div>
         ))}
         {extra > 0 ? (
