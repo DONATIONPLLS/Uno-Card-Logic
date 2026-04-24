@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  # This fixes the "Node.js 20 is deprecated" warning you saw
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -19,12 +18,12 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9 # Updated pnpm version
+          version: 9
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24 # Moving to Node 24 to stay ahead of the curve
+          node-version: 24
 
       - name: Set up Java 17 (Temurin)
         uses: actions/setup-java@v4
@@ -32,8 +31,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Deep Clean Replit & Workspace Junk
+      - name: Deep Clean Replit Junk
         run: |
+          # 1. Clean package.json
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -50,13 +50,18 @@ jobs:
             clean(pkg.devDependencies);
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
           "
+          # 2. Surgically remove Replit plugins from vite.config.ts
+          # This replaces Replit plugin calls with empty strings so they don't break the build
+          sed -i 's/import.*@replit.*//g' vite.config.ts
+          sed -i 's/runtimeErrorOverlay()//g' vite.config.ts
+          sed -i 's/cartographer()//g' vite.config.ts
         working-directory: artifacts/uno-buddy
 
       - name: Install Game Dependencies & Build Tools
-        # We explicitly add vite and typescript back in case they were in the catalog
+        # We explicitly add the missing Tailwind and Vite tools back
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
-          pnpm add -D vite typescript @vitejs/plugin-react
+          pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite
         working-directory: artifacts/uno-buddy
 
       - name: Build Web Assets
