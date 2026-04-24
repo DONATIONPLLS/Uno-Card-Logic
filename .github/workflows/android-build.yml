@@ -29,8 +29,9 @@ jobs:
           java-version: 17
 
       - name: Install Game Dependencies
-        # We add --no-frozen-lockfile to bypass that catalog version error
-        run: pnpm install --no-frozen-lockfile
+        # We tell pnpm to ignore the workspace and the broken catalog
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
         working-directory: artifacts/uno-buddy
 
       - name: Build Web Assets
