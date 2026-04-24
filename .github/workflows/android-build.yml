@@ -25,11 +25,11 @@ jobs:
         with:
           node-version: 24
 
-      - name: Set up Java 17 (Temurin)
+      - name: Set up Java 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Clean package.json
         run: |
@@ -70,7 +70,6 @@ jobs:
       - name: Install All Required Libraries
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
-          # Explicitly adding the animation and icon libraries your game needs
           pnpm add react react-dom framer-motion lucide-react clsx tailwind-merge
           pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite @types/react @types/react-dom
         working-directory: artifacts/uno-buddy
