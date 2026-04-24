@@ -28,12 +28,25 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Strip Replit Catalogs
-        # This magic command removes any dependency that mentions "@catalog"
+      - name: Deep Clean Replit Junk
+        # This script safely deletes any line mentioning @replit or @catalog 
+        # while keeping the file valid for the builder.
         run: |
-          sed -i '/@catalog/d' package.json
-          # Also remove the Replit-specific vite plugin that's causing the crash
-          sed -i '/vite-plugin-cartographer/d' package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const clean = (obj) => {
+              if (!obj) return;
+              Object.keys(obj).forEach(k => {
+                if (k.includes('@replit') || (typeof obj[k] === 'string' && obj[k].includes('catalog:'))) {
+                  delete obj[k];
+                }
+              });
+            };
+            clean(pkg.dependencies);
+            clean(pkg.devDependencies);
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
         working-directory: artifacts/uno-buddy
 
       - name: Install Game Dependencies
