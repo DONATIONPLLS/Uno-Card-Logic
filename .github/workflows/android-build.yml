@@ -67,11 +67,11 @@ jobs:
           EOF
         working-directory: artifacts/uno-buddy
 
-      - name: Install Dependencies (The Whole Engine)
+      - name: Install All Required Libraries
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
-          # Adding React and the build tools back explicitly
-          pnpm add react react-dom
+          # Explicitly adding the animation and icon libraries your game needs
+          pnpm add react react-dom framer-motion lucide-react clsx tailwind-merge
           pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite @types/react @types/react-dom
         working-directory: artifacts/uno-buddy
 
