@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  # This fixes the "Node.js 20 is deprecated" warning you saw
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-android-apk:
     runs-on: ubuntu-latest
@@ -15,12 +19,12 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 8
+          version: 9 # Updated pnpm version
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 24 # Moving to Node 24 to stay ahead of the curve
 
       - name: Set up Java 17 (Temurin)
         uses: actions/setup-java@v4
@@ -29,7 +33,6 @@ jobs:
           java-version: 17
 
       - name: Deep Clean Replit & Workspace Junk
-        # This script now removes @replit, @catalog, AND @workspace links
         run: |
           node -e "
             const fs = require('fs');
@@ -38,11 +41,7 @@ jobs:
               if (!obj) return;
               Object.keys(obj).forEach(k => {
                 const val = obj[k];
-                const isReplit = k.includes('@replit');
-                const isWorkspace = k.startsWith('@workspace') || (typeof val === 'string' && val.includes('workspace:'));
-                const isCatalog = typeof val === 'string' && val.includes('catalog:');
-                
-                if (isReplit || isWorkspace || isCatalog) {
+                if (k.includes('@replit') || (typeof val === 'string' && (val.includes('catalog:') || val.includes('workspace:')))) {
                   delete obj[k];
                 }
               });
@@ -53,8 +52,11 @@ jobs:
           "
         working-directory: artifacts/uno-buddy
 
-      - name: Install Game Dependencies
-        run: pnpm install --no-frozen-lockfile --ignore-workspace
+      - name: Install Game Dependencies & Build Tools
+        # We explicitly add vite and typescript back in case they were in the catalog
+        run: |
+          pnpm install --no-frozen-lockfile --ignore-workspace
+          pnpm add -D vite typescript @vitejs/plugin-react
         working-directory: artifacts/uno-buddy
 
       - name: Build Web Assets
