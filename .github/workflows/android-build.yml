@@ -52,7 +52,6 @@ jobs:
         working-directory: artifacts/uno-buddy
 
       - name: Create Clean Vite Config
-        # This overwrites the messy Replit config with a standard one
         run: |
           cat <<EOF > vite.config.ts
           import { defineConfig } from 'vite';
@@ -63,18 +62,17 @@ jobs:
             plugins: [react(), tailwindcss()],
             build: {
               outDir: 'dist',
-            },
-            server: {
-              host: '0.0.0.0',
             }
           });
           EOF
         working-directory: artifacts/uno-buddy
 
-      - name: Install Dependencies
+      - name: Install Dependencies (The Whole Engine)
         run: |
           pnpm install --no-frozen-lockfile --ignore-workspace
-          pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite
+          # Adding React and the build tools back explicitly
+          pnpm add react react-dom
+          pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite @types/react @types/react-dom
         working-directory: artifacts/uno-buddy
 
       - name: Build Web Assets
