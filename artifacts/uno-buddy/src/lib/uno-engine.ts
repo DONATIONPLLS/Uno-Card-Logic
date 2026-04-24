@@ -64,6 +64,23 @@ export interface GameState {
   pendingAction: PendingSwap | null;
   log: string[];
   winner: number | null;
+  scores: number[];
+}
+
+/** Standard Uno point values awarded to the winner per opponent's leftover card. */
+export function cardPointValue(c: UnoCard): number {
+  if (c.value === "wild" || c.value === "wild4") return 50;
+  if (c.value === "skip" || c.value === "reverse" || c.value === "draw2") return 20;
+  return parseInt(c.value, 10) || 0;
+}
+
+export function tallyRoundScore(state: GameState, winnerIdx: number): number {
+  let total = 0;
+  state.hands.forEach((hand, i) => {
+    if (i === winnerIdx) return;
+    for (const c of hand) total += cardPointValue(c);
+  });
+  return total;
 }
 
 const COLORS: UnoColor[] = ["red", "yellow", "green", "blue"];
@@ -136,6 +153,7 @@ export interface NewGameOptions {
   players: PlayerConfig[];
   houseRules?: Partial<HouseRules>;
   mode?: GameMode;
+  previousScores?: number[];
 }
 
 export function dealNewGame(opts: NewGameOptions): GameState {
@@ -172,6 +190,9 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     pendingAction: null,
     log: [`Game started. Top card: ${describe(first)}.`, `${nameOf(players[0])} starts.`],
     winner: null,
+    scores: opts.previousScores && opts.previousScores.length === players.length
+      ? [...opts.previousScores]
+      : new Array(players.length).fill(0),
   };
 }
 
@@ -243,7 +264,9 @@ export function playCard(
 
   if (hand.length === 0) {
     s.winner = playerIdx;
-    s.log.unshift(`${nameOf(s.players[playerIdx])} wins!`);
+    const earned = tallyRoundScore(s, playerIdx);
+    s.scores = s.scores.map((v, i) => (i === playerIdx ? v + earned : v));
+    s.log.unshift(`${nameOf(s.players[playerIdx])} wins! (+${earned} pts)`);
     return s;
   }
 
@@ -442,5 +465,6 @@ function cloneState(s: GameState): GameState {
     pendingAction: s.pendingAction ? { ...s.pendingAction } : null,
     log: [...s.log],
     winner: s.winner,
+    scores: [...s.scores],
   };
 }

@@ -1,3 +1,6 @@
+import { sfx } from "@/lib/sounds";
+import { haptics } from "@/lib/haptics";
+
 export function MainMenu({
   hasSavedGame,
   onContinue,
@@ -11,6 +14,12 @@ export function MainMenu({
   onScoring: () => void;
   onRules: () => void;
 }) {
+  const tap = (cb: () => void) => () => {
+    sfx.click();
+    haptics.light();
+    cb();
+  };
+
   return (
     <div
       className="min-h-screen relative overflow-hidden flex flex-col items-center justify-between px-6 py-10"
@@ -23,24 +32,25 @@ export function MainMenu({
       <div className="pointer-events-none absolute top-1/3 -right-24 w-80 h-80 bg-[hsl(48_100%_50%)]/15 blur-[120px] rounded-full" />
       <div className="pointer-events-none absolute -bottom-24 left-1/4 w-80 h-80 bg-[hsl(215_85%_50%)]/20 blur-[120px] rounded-full" />
 
-      <div className="relative flex-1 flex flex-col items-center justify-center gap-8 text-center w-full">
-        <div className="relative inline-flex flex-col items-center justify-center">
-          {/* Halo — shrunk ~15% (was w-44/h-44 → now w-[9.4rem]/h-[9.4rem]) */}
+      <div className="relative flex-1 flex flex-col items-center justify-center gap-6 text-center w-full">
+        <div className="relative inline-flex flex-col items-center">
+          {/* Halo container — flex-centers UNO inside; sized so its bottom doesn't kiss the description below */}
           <div
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[9.4rem] h-[9.4rem] rounded-full bg-white/[0.04] border border-white/10"
+            className="w-32 h-32 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center"
             style={{
               backdropFilter: "blur(20px)",
               WebkitBackdropFilter: "blur(20px)",
               boxShadow: "inset 0 0 40px rgba(255,255,255,0.05)",
             }}
-          />
-          {/* UNO — italic letters slant right; pad-right keeps the glyphs centered inside the halo */}
-          <h1 className="relative text-6xl font-black italic tracking-tight pr-3 leading-none">
-            <span className="text-[hsl(0_85%_60%)]">U</span>
-            <span className="text-[hsl(48_100%_60%)]">N</span>
-            <span className="text-[hsl(140_70%_50%)]">O</span>
-          </h1>
-          <div className="relative text-[10px] font-semibold text-white/65 tracking-[0.55em] mt-2 pl-[0.55em]">
+          >
+            {/* Negative margin-right offsets the italic right-tilt so the visual mass lands on center */}
+            <h1 className="text-5xl font-black italic tracking-tight leading-none -mr-2">
+              <span className="text-[hsl(0_85%_60%)]">U</span>
+              <span className="text-[hsl(48_100%_60%)]">N</span>
+              <span className="text-[hsl(140_70%_50%)]">O</span>
+            </h1>
+          </div>
+          <div className="text-[10px] font-semibold text-white/65 tracking-[0.55em] mt-3 pl-[0.55em]">
             BUDDY
           </div>
         </div>
@@ -51,18 +61,18 @@ export function MainMenu({
 
       <div className="relative w-full max-w-sm flex flex-col gap-3">
         {hasSavedGame ? (
-          <SoftButton onClick={onContinue} accent="emerald">
+          <SoftButton onClick={tap(onContinue)} accent="emerald">
             Continue Game
           </SoftButton>
         ) : null}
-        <SoftButton onClick={onNew} accent="primary">
+        <SoftButton onClick={tap(onNew)} accent="primary">
           Start New Game
         </SoftButton>
         <div className="grid grid-cols-2 gap-3">
-          <SoftButton onClick={onScoring} accent="ghost" small>
+          <SoftButton onClick={tap(onScoring)} accent="ghost" small>
             Scoring
           </SoftButton>
-          <SoftButton onClick={onRules} accent="ghost" small>
+          <SoftButton onClick={tap(onRules)} accent="ghost" small>
             Rules
           </SoftButton>
         </div>

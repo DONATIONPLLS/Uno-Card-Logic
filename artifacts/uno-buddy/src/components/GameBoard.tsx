@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   chooseBotMove,
   chooseBotSwapTarget,
@@ -18,6 +19,7 @@ import { UnoCardView } from "@/components/UnoCardView";
 import { RulesPanel } from "@/components/RulesPanel";
 import { Avatar, type AvatarTone } from "@/components/Avatar";
 import { sfx } from "@/lib/sounds";
+import { haptics } from "@/lib/haptics";
 
 const colorSwatch: Record<UnoColor, string> = {
   red: "bg-[hsl(0_85%_50%)]",
@@ -56,6 +58,11 @@ interface Flight {
   faceDown: boolean;
 }
 
+interface PendingOrigin {
+  cardId: string;
+  rect: { x: number; y: number };
+}
+
 export function GameBoard({
   game,
   setGame,
@@ -92,13 +99,16 @@ export function GameBoard({
   const lastTopRef = useRef<UnoCard | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Refs for flight animation start/end positions
+  // Refs / state for the flight animation system
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const drawPileRef = useRef<HTMLDivElement | null>(null);
   const discardRef = useRef<HTMLDivElement | null>(null);
+  const handZoneRef = useRef<HTMLDivElement | null>(null);
+  const pendingOriginRef = useRef<PendingOrigin | null>(null);
   const [flights, setFlights] = useState<Flight[]>([]);
   const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
   const prevGameRef = useRef<GameState>(game);
+  const prevDrawLenRef = useRef<number>(game.drawPile.length);
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
@@ -121,11 +131,18 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-  // ===== Card flight animations =====
+  // ===== Card flight animations + audio cues for state diffs =====
   useEffect(() => {
     const prev = prevGameRef.current;
     prevGameRef.current = game;
     if (prev === game) return;
+
+    // Detect deck reshuffle (drawPile grew without anyone drawing — only happens on reshuffle)
+    if (game.drawPile.length > prevDrawLenRef.current + 0) {
+      const grew = game.drawPile.length - prevDrawLenRef.current;
+      if (grew > 5) sfx.shuffle();
+    }
+    prevDrawLenRef.current = game.drawPile.length;
 
     const newFlights: Flight[] = [];
     let newTopSuppress: string | null = null;
@@ -138,55 +155,85 @@ export function GameBoard({
       const seat = seatRefs.current[i];
 
       if (delta === -1 && game.discardPile.length === prev.discardPile.length + 1) {
-        // play
         const playedCard = game.discardPile[game.discardPile.length - 1];
         const dst = discardRef.current;
-        if (seat && dst && playedCard) {
+        if (!dst || !playedCard) return;
+        const d = dst.getBoundingClientRect();
+
+        // Prefer the captured hand-card position (viewer plays); else fall back to seat avatar
+        let startX: number;
+        let startY: number;
+        if (
+          i === handViewIdx &&
+          pendingOriginRef.current &&
+          pendingOriginRef.current.cardId === playedCard.id
+        ) {
+          startX = pendingOriginRef.current.rect.x;
+          startY = pendingOriginRef.current.rect.y;
+          pendingOriginRef.current = null;
+        } else if (seat) {
           const s = seat.getBoundingClientRect();
-          const d = dst.getBoundingClientRect();
-          newFlights.push({
-            id: `play-${playedCard.id}-${now}`,
-            card: playedCard,
-            start: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
-            end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
-            faceDown: false,
-          });
-          newTopSuppress = playedCard.id;
+          startX = s.left + s.width / 2;
+          startY = s.top + s.height / 2;
+        } else {
+          return;
         }
+
+        newFlights.push({
+          id: `play-${playedCard.id}-${now}`,
+          card: playedCard,
+          start: { x: startX, y: startY },
+          end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
+          faceDown: false,
+        });
+        newTopSuppress = playedCard.id;
       } else if (delta > 0 && delta <= 4) {
-        // draws
         const src = drawPileRef.current;
-        if (seat && src) {
-          const s = src.getBoundingClientRect();
+        if (!src) return;
+        const s = src.getBoundingClientRect();
+        // Destination: end of viewer's hand zone for the viewer; seat avatar for others
+        let endX: number;
+        let endY: number;
+        if (i === handViewIdx && handZoneRef.current) {
+          const hz = handZoneRef.current.getBoundingClientRect();
+          endX = hz.right - 40;
+          endY = hz.top + hz.height / 2;
+        } else if (seat) {
           const d = seat.getBoundingClientRect();
-          for (let k = 0; k < delta; k++) {
-            newFlights.push({
-              id: `draw-${i}-${now}-${k}`,
-              card: { id: `fly-${now}-${k}`, color: "wild", value: "wild" } as UnoCard,
-              start: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
-              end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
-              faceDown: true,
-            });
-          }
+          endX = d.left + d.width / 2;
+          endY = d.top + d.height / 2;
+        } else {
+          return;
+        }
+        for (let k = 0; k < delta; k++) {
+          newFlights.push({
+            id: `draw-${i}-${now}-${k}`,
+            card: { id: `fly-${now}-${k}`, color: "wild", value: "wild" } as UnoCard,
+            start: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
+            end: { x: endX, y: endY },
+            faceDown: true,
+          });
         }
       }
     });
 
     if (newFlights.length === 0) return;
-    setFlights((prev) => [...prev, ...newFlights]);
+    setFlights((prevFs) => [...prevFs, ...newFlights]);
     if (newTopSuppress) setSuppressedTopId(newTopSuppress);
     const ids = newFlights.map((f) => f.id);
     const t = setTimeout(() => {
-      setFlights((prev) => prev.filter((f) => !ids.includes(f.id)));
+      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
       if (newTopSuppress) setSuppressedTopId(null);
     }, 520);
     return () => clearTimeout(t);
-  }, [game]);
+  }, [game, handViewIdx]);
 
+  // Win detection
   useEffect(() => {
     if (game.winner !== null && !wonRef.current) {
       wonRef.current = true;
       sfx.win();
+      haptics.heavy();
       setAnnouncement({ text: `${nameOf(game.players[game.winner])} WINS!`, color: "white" });
       const t = setTimeout(() => setAnnouncement(null), 2400);
       return () => clearTimeout(t);
@@ -194,16 +241,18 @@ export function GameBoard({
     return undefined;
   }, [game.winner, game.players]);
 
+  // Action card announcement + impact SFX
   useEffect(() => {
     const prev = lastTopRef.current;
     lastTopRef.current = top;
     if (!prev || prev.id === top.id) return;
     let msg: string | null = null;
+    let heavy = false;
     switch (top.value) {
-      case "skip": msg = "SKIPPED!"; break;
+      case "skip": msg = "SKIPPED!"; heavy = true; break;
       case "reverse": msg = "REVERSE!"; break;
-      case "draw2": msg = "+2 DRAW!"; break;
-      case "wild4": msg = "+4 WILD!"; break;
+      case "draw2": msg = "+2 DRAW!"; heavy = true; break;
+      case "wild4": msg = "+4 WILD!"; heavy = true; break;
       case "wild": msg = "WILD!"; break;
       case "0": if (game.houseRules.sevenZero) msg = "ALL PASS!"; break;
       case "7": if (game.houseRules.sevenZero) msg = "SWAP!"; break;
@@ -211,12 +260,17 @@ export function GameBoard({
     if (msg) {
       const c: UnoColor | "white" = top.color === "wild" ? game.activeColor : top.color;
       setAnnouncement({ text: msg, color: c });
+      if (heavy) {
+        sfx.impact();
+        haptics.heavy();
+      }
       const t = setTimeout(() => setAnnouncement(null), 1500);
       return () => clearTimeout(t);
     }
     return undefined;
   }, [top, game.houseRules.sevenZero, game.activeColor]);
 
+  // Pass-and-play overlays
   useEffect(() => {
     if (!isPassAndPlay) {
       setRevealed(true);
@@ -258,6 +312,17 @@ export function GameBoard({
       lastHumanRef.current = currentIdx;
     }
   }, [revealed, currentIdx, currentPlayer?.kind]);
+
+  // "Your turn!" alert when control transfers to the viewing human (network mode)
+  useEffect(() => {
+    if (isPassAndPlay) return;
+    if (myTurn && !viewerIsBot) {
+      sfx.yourTurn();
+      haptics.medium();
+    }
+    // intentionally only fires when myTurn flips true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTurn, isPassAndPlay, viewerIsBot]);
 
   // Bot loop
   useEffect(() => {
@@ -328,6 +393,16 @@ export function GameBoard({
     setDrawArmed(false);
   }, [currentIdx, isPassAndPlay]);
 
+  const captureOriginFor = (cardId: string) => {
+    const el = cardRefs.current[cardId];
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    pendingOriginRef.current = {
+      cardId,
+      rect: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+    };
+  };
+
   const onCardTap = (cardId: string) => {
     if (!myTurn || !revealed || viewerIsBot) return;
     if (game.pendingAction !== null) return;
@@ -337,11 +412,13 @@ export function GameBoard({
     setDrawArmed(false);
     if (!playable) {
       sfx.click();
+      haptics.light();
       setSelectedId(cardId);
       return;
     }
     if (selectedId !== cardId) {
       sfx.click();
+      haptics.light();
       setSelectedId(cardId);
       return;
     }
@@ -358,14 +435,18 @@ export function GameBoard({
       setPickColorFor(selectedId);
       return;
     }
+    captureOriginFor(selectedId);
     sfx.swish();
+    haptics.medium();
     act.play(selectedId);
     setSelectedId(null);
   };
 
   const handlePickColor = (color: UnoColor) => {
     if (!pickColorFor) return;
+    captureOriginFor(pickColorFor);
     sfx.swish();
+    haptics.medium();
     act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
@@ -381,10 +462,12 @@ export function GameBoard({
     if (hasDrawnThisTurn) return;
     if (!drawArmed) {
       sfx.click();
+      haptics.light();
       setDrawArmed(true);
       return;
     }
     sfx.draw();
+    haptics.light();
     act.draw();
     setHasDrawnThisTurn(true);
     setDrawArmed(false);
@@ -392,10 +475,12 @@ export function GameBoard({
 
   const onPass = () => {
     if (!myTurn || !revealed) return;
+    haptics.light();
     act.endTurn();
   };
 
   const onPickSwap = (targetIdx: number) => {
+    haptics.medium();
     act.resolveSwap(targetIdx);
     setSwapPickerFor(null);
   };
@@ -447,7 +532,7 @@ export function GameBoard({
     >
       <header className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-black/40 backdrop-blur-xl z-10 gap-2">
         <button
-          onClick={onExit}
+          onClick={() => { sfx.click(); haptics.light(); onExit(); }}
           className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0"
           aria-label="Menu"
         >
@@ -477,7 +562,7 @@ export function GameBoard({
           ) : null}
         </div>
         <button
-          onClick={() => setShowRules(true)}
+          onClick={() => { sfx.click(); haptics.light(); setShowRules(true); }}
           className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center font-bold text-sm shrink-0"
           aria-label="Rules"
         >
@@ -495,6 +580,7 @@ export function GameBoard({
               idx={seatAt("top")!.idx}
               tone={toneFor(seatAt("top")!.idx)}
               flipMode={flipMode}
+              score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
             />
           ) : null}
@@ -508,6 +594,7 @@ export function GameBoard({
               idx={seatAt("left")!.idx}
               tone={toneFor(seatAt("left")!.idx)}
               flipMode={flipMode}
+              score={game.scores[seatAt("left")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
             />
           ) : null}
@@ -521,6 +608,7 @@ export function GameBoard({
               idx={seatAt("right")!.idx}
               tone={toneFor(seatAt("right")!.idx)}
               flipMode={flipMode}
+              score={game.scores[seatAt("right")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
             />
           ) : null}
@@ -608,11 +696,10 @@ export function GameBoard({
             </div>
             <span className="text-sm font-semibold truncate">
               {viewerPlayer?.name}
-              {viewerIsBot ? " (AI)" : ""} ({myHand.length})
+              {viewerIsBot ? " (AI)" : ""}
             </span>
-            {!myTurn && game.winner === null ? (
-              <span className="text-[10px] text-white/50 ml-1">waiting…</span>
-            ) : null}
+            <ScoreBadge score={game.scores[handViewIdx] ?? 0} />
+            <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
           {selectedId && selectedPlayable ? (
             <button
@@ -639,36 +726,48 @@ export function GameBoard({
         </div>
 
         <div
+          ref={handZoneRef}
           className="px-3 scroll-smooth"
           style={{ overflowX: "auto", overflowY: "visible", paddingTop: "2.5rem" }}
         >
           <div className="flex gap-2 items-end pb-2">
-            {myHand.map((c) => {
-              const showFaceDown = viewerIsBot || (!revealed && myTurn && isPassAndPlay);
-              const playable =
-                myTurn && !viewerIsBot &&
-                isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
-              const selected = selectedId === c.id;
-              return (
-                <div
-                  key={c.id}
-                  ref={(el) => { cardRefs.current[c.id] = el; }}
-                  className={`shrink-0 transition-transform duration-150 relative ${selected ? "-translate-y-8" : ""}`}
-                  style={{ zIndex: selected ? 30 : 1 }}
-                >
-                  <div className={`rounded-xl ${selected ? "ring-4 ring-white shadow-2xl" : ""}`}>
-                    <UnoCardView
-                      card={showFaceDown ? { ...c, color: "wild", value: "wild" } : c}
-                      onClick={viewerIsBot ? undefined : () => onCardTap(c.id)}
-                      disabled={!myTurn || !revealed || viewerIsBot || (!playable && !selected)}
-                      faceDown={showFaceDown}
-                      flipMode={flipMode}
-                      size="lg"
-                    />
-                  </div>
-                </div>
-              );
-            })}
+            <AnimatePresence initial={false}>
+              {myHand.map((c) => {
+                const showFaceDown = viewerIsBot || (!revealed && myTurn && isPassAndPlay);
+                const playable =
+                  myTurn && !viewerIsBot &&
+                  isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
+                const selected = selectedId === c.id;
+                return (
+                  <motion.div
+                    key={c.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.6, y: 20 }}
+                    animate={{
+                      opacity: 1,
+                      scale: 1,
+                      y: selected ? -32 : 0,
+                    }}
+                    exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.12 } }}
+                    transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                    ref={(el) => { cardRefs.current[c.id] = el as HTMLDivElement | null; }}
+                    className="shrink-0 relative"
+                    style={{ zIndex: selected ? 30 : 1 }}
+                  >
+                    <div className={`rounded-xl ${selected ? "ring-4 ring-white shadow-2xl" : ""}`}>
+                      <UnoCardView
+                        card={showFaceDown ? { ...c, color: "wild", value: "wild" } : c}
+                        onClick={viewerIsBot ? undefined : () => onCardTap(c.id)}
+                        disabled={!myTurn || !revealed || viewerIsBot || (!playable && !selected)}
+                        faceDown={showFaceDown}
+                        flipMode={flipMode}
+                        size="lg"
+                      />
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
             {myHand.length === 0 ? (
               <span className="text-white/50 text-sm py-6">No cards.</span>
             ) : null}
@@ -747,7 +846,8 @@ export function GameBoard({
           onReveal={() => {
             setRevealed(true);
             setOverlayKind(null);
-            sfx.click();
+            sfx.ding();
+            haptics.medium();
           }}
         />
       ) : null}
@@ -762,6 +862,17 @@ const tableGridStyle: React.CSSProperties = {
   gridTemplateRows: "auto 1fr",
   minHeight: "260px",
 };
+
+function ScoreBadge({ score }: { score: number }) {
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded-md text-[10px] font-bold tabular-nums border border-[#facc15]/40 text-[#facc15] bg-[#facc15]/10"
+      title="Score"
+    >
+      {score} pts
+    </span>
+  );
+}
 
 function TurnBadge({
   label,
@@ -798,6 +909,7 @@ function SeatView({
   idx,
   tone,
   flipMode,
+  score,
   avatarRef,
 }: {
   orientation: "horizontal" | "vertical";
@@ -806,14 +918,22 @@ function SeatView({
   idx: number;
   tone: AvatarTone;
   flipMode?: boolean;
+  score: number;
   avatarRef?: (el: HTMLDivElement | null) => void;
 }) {
   const shown = hand.slice(0, 7);
   const extra = hand.length - shown.length;
   return (
     <div className="flex flex-col items-center gap-1">
-      <div ref={avatarRef}>
+      <div ref={avatarRef} className="relative">
         <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" tone={tone} />
+        {/* Score chip overlapping the avatar's bottom-left */}
+        <span
+          className="absolute -bottom-1 -left-2 px-1 rounded-md text-[9px] font-bold tabular-nums border border-[#facc15]/50 text-[#facc15] bg-black/70 backdrop-blur-sm"
+          title="Score"
+        >
+          {score}
+        </span>
       </div>
       <div className="text-[10px] text-white/70 text-center max-w-[90px] truncate">
         {player.name}

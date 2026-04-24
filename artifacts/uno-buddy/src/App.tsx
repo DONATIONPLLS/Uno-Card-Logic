@@ -43,6 +43,10 @@ function loadGame(): GameState | null {
   try {
     const g = JSON.parse(saved) as GameState;
     if (!g.players || !g.hands) return null;
+    // Migrate older saves that predate scores
+    if (!Array.isArray((g as any).scores)) {
+      (g as any).scores = new Array(g.players.length).fill(0);
+    }
     return g;
   } catch {
     return null;
