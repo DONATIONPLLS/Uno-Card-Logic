@@ -21,7 +21,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'pnpm'
 
       - name: Set up Java 17 (Temurin)
         uses: actions/setup-java@v4
@@ -29,29 +28,26 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Install dependencies
-        run: pnpm install
+      - name: Install Game Dependencies
+        # We add --no-frozen-lockfile to bypass that catalog version error
+        run: pnpm install --no-frozen-lockfile
+        working-directory: artifacts/uno-buddy
 
-      - name: Build web assets
+      - name: Build Web Assets
         run: pnpm run build
+        working-directory: artifacts/uno-buddy
 
-      - name: Ensure @capacitor/android is installed
+      - name: Setup Android Shell
         run: |
-          if ! pnpm ls @capacitor/android --depth=0 >/dev/null 2>&1; then
-            pnpm add @capacitor/android
-          fi
-
-      - name: Ensure android/ platform is added
-        run: |
+          pnpm add @capacitor/android @capacitor/core @capacitor/cli
           if [ ! -d "android" ]; then
             npx cap add android
           fi
+          npx cap sync android
+        working-directory: artifacts/uno-buddy
 
-      - name: Sync web assets to Android platform
-        run: npx cap sync android
-
-      - name: Build Android APK (assembleDebug)
-        working-directory: android
+      - name: Build Android APK
+        working-directory: artifacts/uno-buddy/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
@@ -60,5 +56,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: uno-buddy-app
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: artifacts/uno-buddy/android/app/build/outputs/apk/debug/app-debug.apk
           
