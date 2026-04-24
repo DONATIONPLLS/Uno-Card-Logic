@@ -2,22 +2,26 @@ name: Android APK CI/CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build-android-apk:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'pnpm'
 
       - name: Set up Java 17 (Temurin)
         uses: actions/setup-java@v4
@@ -26,16 +30,15 @@ jobs:
           java-version: 17
 
       - name: Install dependencies
-        # Switched from 'npm ci' to 'npm install' to handle your specific lockfile
-        run: npm install --legacy-peer-deps
+        run: pnpm install
 
       - name: Build web assets
-        run: npm run build
+        run: pnpm run build
 
       - name: Ensure @capacitor/android is installed
         run: |
-          if ! npm ls @capacitor/android --depth=0 >/dev/null 2>&1; then
-            npm install @capacitor/android
+          if ! pnpm ls @capacitor/android --depth=0 >/dev/null 2>&1; then
+            pnpm add @capacitor/android
           fi
 
       - name: Ensure android/ platform is added
