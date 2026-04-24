@@ -28,9 +28,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Deep Clean Replit Junk
-        # This script safely deletes any line mentioning @replit or @catalog 
-        # while keeping the file valid for the builder.
+      - name: Deep Clean Replit & Workspace Junk
+        # This script now removes @replit, @catalog, AND @workspace links
         run: |
           node -e "
             const fs = require('fs');
@@ -38,7 +37,12 @@ jobs:
             const clean = (obj) => {
               if (!obj) return;
               Object.keys(obj).forEach(k => {
-                if (k.includes('@replit') || (typeof obj[k] === 'string' && obj[k].includes('catalog:'))) {
+                const val = obj[k];
+                const isReplit = k.includes('@replit');
+                const isWorkspace = k.startsWith('@workspace') || (typeof val === 'string' && val.includes('workspace:'));
+                const isCatalog = typeof val === 'string' && val.includes('catalog:');
+                
+                if (isReplit || isWorkspace || isCatalog) {
                   delete obj[k];
                 }
               });
