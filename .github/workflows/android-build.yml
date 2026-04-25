@@ -1,127 +1,52 @@
-name: Android APK CI/CD
+name: Android Build
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    branches:
+      - main
 
 jobs:
-  build-android-apk:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: 24
 
-      - name: Set up Java 21 (Temurin)
-        uses: actions/setup-java@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v2
         with:
-          distribution: temurin
+          version: 9
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
           java-version: 21
 
-      - name: Clean package.json and Setup Configs
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build project
+        run: pnpm build
+
+      - name: Apply True Immersive Mode
         run: |
-          # 1. Strip Replit bloat and broken catalogs
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            const clean = (obj) => {
-              if (!obj) return;
-              Object.keys(obj).forEach(k => {
-                const val = obj[k];
-                if (k.includes('@replit') || (typeof val === 'string' && (val.includes('catalog:') || val.includes('workspace:')))) {
-                  delete obj[k];
-                }
-              });
-            };
-            clean(pkg.dependencies);
-            clean(pkg.devDependencies);
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          "
-          
-          # 2. Create standard Vite config
-          cat <<EOF > vite.config.ts
-          import { defineConfig } from 'vite';
-          import react from '@vitejs/plugin-react';
-          import tailwindcss from '@tailwindcss/vite';
-
-          export default defineConfig({
-            plugins: [react(), tailwindcss()],
-            build: { outDir: 'dist' }
-          });
-          EOF
-        working-directory: artifacts/uno-buddy
-
-      - name: Install Dependencies and Build Web
-        run: |
-          pnpm install --no-frozen-lockfile --ignore-workspace
-          pnpm add react react-dom framer-motion lucide-react clsx tailwind-merge
-          pnpm add -D vite typescript @vitejs/plugin-react tailwindcss @tailwindcss/vite @types/react @types/react-dom
-          pnpm run build
-        working-directory: artifacts/uno-buddy
-
-      - name: Setup Capacitor and Android Project
-        run: |
-          pnpm add @capacitor/android @capacitor/core @capacitor/cli
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
-          npx cap sync android
-        working-directory: artifacts/uno-buddy
-
-      - name: Apply True Immersive Mode (Native Rewrite)
-        run: |
-          # Find the existing MainActivity.java to extract the package name
-          FILE=$(find android/app/src/main/java -name MainActivity.java | head -n1)
-          PKG_NAME=$(grep "^package " "$FILE")
-          
-          # Overwrite the file with the Immersive Sticky Logic
-          cat <<EOF > "$FILE"
-          $PKG_NAME
-
-          import android.view.View;
-          import com.getcapacitor.BridgeActivity;
-
-          public class MainActivity extends BridgeActivity {
-              @Override
-              public void onWindowFocusChanged(boolean hasFocus) {
-                  super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus) {
-                      getWindow().getDecorView().setSystemUiVisibility(
-                          View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                          | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                          | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                          | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                          | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                          | View.SYSTEM_UI_FLAG_FULLSCREEN
-                      );
-                  }
-              }
-          }
-          EOF
-        working-directory: artifacts/uno-buddy
+          find android -name MainActivity.java -exec sed -i 's/import android.view.View;//g' {} +
+          find android -name MainActivity.java -exec sed -i 's/getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);/getWindow().setDecorView(null);/' {} +
 
       - name: Build Android APK
         run: |
-          chmod +x gradlew
+          cd android
           ./gradlew assembleDebug
-        working-directory: artifacts/uno-buddy/android
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: uno-buddy-app
-          path: artifacts/uno-buddy/android/app/build/outputs/apk/debug/app-debug.apk
-          
+          name: uno-buddy
+          path: android/app/build/outputs/apk/debug/app-debug.apk
