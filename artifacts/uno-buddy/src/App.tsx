@@ -10,7 +10,7 @@ import {
   type HouseRules,
   type PlayerConfig,
 } from "@/lib/uno-engine";
-import { FullScreen } from 'capacitor-android-fullscreen';
+import { Capacitor } from '@capacitor/core';
 import { MainMenu } from "@/components/MainMenu";
 import { ModeSelect } from "@/components/ModeSelect";
 import { SetupScreen } from "@/components/SetupScreen";
@@ -79,8 +79,13 @@ function App() {
     }
   }, [game, multi]);
 
-  useEffect(() => {
-  FullScreen.enable();
+  
+useEffect(() => {
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    import('capacitor-android-fullscreen').then(({ FullScreen }) => {
+      FullScreen.enable();
+    });
+  }
 }, []);
 
   // === Multiplayer wiring ===
