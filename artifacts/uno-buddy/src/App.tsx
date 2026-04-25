@@ -10,7 +10,6 @@ import {
   type HouseRules,
   type PlayerConfig,
 } from "@/lib/uno-engine";
-import { Capacitor } from '@capacitor/core';
 import { MainMenu } from "@/components/MainMenu";
 import { ModeSelect } from "@/components/ModeSelect";
 import { SetupScreen } from "@/components/SetupScreen";
@@ -78,27 +77,6 @@ function App() {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
     }
   }, [game, multi]);
-
-  useEffect(() => {
-    // Only run this effect on Android native device,
-    // and only if 'window' is defined (not in SSR/build)
-    if (
-      typeof window !== "undefined" &&
-      Capacitor.isNativePlatform &&
-      Capacitor.isNativePlatform() &&
-      Capacitor.getPlatform &&
-      Capacitor.getPlatform() === "android"
-    ) {
-      // Further protect against ES module analysis by Vite/Rollup
-      // Only do the import *inside* the runtime check
-      import('capacitor-android-fullscreen')
-        .then(({ FullScreen }) => {
-          FullScreen.enable();
-        })
-        .catch(() => {}); // Ignore if it fails (e.g., not available on web)
-    }
-  }, []);
-
 
   // === Multiplayer wiring ===
   // Host: handle incoming actions from any peer.
