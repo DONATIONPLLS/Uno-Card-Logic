@@ -87,22 +87,18 @@ jobs:
           npx cap sync android
         working-directory: artifacts/uno-buddy
 
-      - name: Apply Edge-to-Edge (Transparent Bars)
+      - name: Apply Custom System Bars (Black Top, Clear Bottom)
         run: |
-          # Find MainActivity
           FILE=$(find android/app/src/main/java -name MainActivity.java | head -n1)
           
           # 1. Add necessary imports
           sed -i '/package /a import android.graphics.Color;\nimport android.view.View;\nimport android.view.WindowManager;' "$FILE"
           
-          # 2. Inject the transparency logic
-          # This makes the status and nav bars transparent and tells the layout to fill the screen
-          sed -i '/super.onCreate/a \        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);\n        getWindow().setStatusBarColor(Color.TRANSPARENT);\n        getWindow().setNavigationBarColor(Color.TRANSPARENT);\n        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);' "$FILE"
-          
-          # 3. Update styles.xml to ensure no background colors interfere
-          STYLE_FILE="android/app/src/main/res/values/styles.xml"
-          sed -i '/<style name="AppTheme"/a \        <item name="android:windowTranslucentStatus">false</item>\n        <item name="android:windowTranslucentNavigation">false</item>\n        <item name="android:navigationBarColor">@android:color/transparent</item>\n        <item name="android:statusBarColor">@android:color/transparent</item>' "$STYLE_FILE"
+          # 2. Inject the split logic: Black status bar, Transparent nav bar
+          # Notice we removed View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN so it doesn't overlap the top!
+          sed -i '/super.onCreate/a \        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);\n        getWindow().setStatusBarColor(Color.BLACK);\n        getWindow().setNavigationBarColor(Color.TRANSPARENT);\n        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);' "$FILE"
         working-directory: artifacts/uno-buddy
+        
         
       - name: Build Android APK
         working-directory: artifacts/uno-buddy/android
