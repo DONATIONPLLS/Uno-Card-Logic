@@ -10,6 +10,7 @@ import {
   type HouseRules,
   type PlayerConfig,
 } from "@/lib/uno-engine";
+import { FullScreen } from 'capacitor-android-fullscreen';
 import { MainMenu } from "@/components/MainMenu";
 import { ModeSelect } from "@/components/ModeSelect";
 import { SetupScreen } from "@/components/SetupScreen";
@@ -77,6 +78,10 @@ function App() {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
     }
   }, [game, multi]);
+
+  useEffect(() => {
+  FullScreen.enable();
+}, []);
 
   // === Multiplayer wiring ===
   // Host: handle incoming actions from any peer.
