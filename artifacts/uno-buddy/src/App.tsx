@@ -82,9 +82,13 @@ function App() {
   
 useEffect(() => {
   if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-    import('capacitor-android-fullscreen').then(({ FullScreen }) => {
-      FullScreen.enable();
-    });
+    import('capacitor-android-fullscreen')
+      .then(({ FullScreen }) => {
+        FullScreen.enable();
+      })
+      .catch((e) => {
+        // Ignore error if plugin is not available in web/dev
+      });
   }
 }, []);
 
