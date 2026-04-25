@@ -79,18 +79,26 @@ function App() {
     }
   }, [game, multi]);
 
-  
-useEffect(() => {
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-    import('capacitor-android-fullscreen')
-      .then(({ FullScreen }) => {
-        FullScreen.enable();
-      })
-      .catch((e) => {
-        // Ignore error if plugin is not available in web/dev
-      });
-  }
-}, []);
+  useEffect(() => {
+    // Only run this effect on Android native device,
+    // and only if 'window' is defined (not in SSR/build)
+    if (
+      typeof window !== "undefined" &&
+      Capacitor.isNativePlatform &&
+      Capacitor.isNativePlatform() &&
+      Capacitor.getPlatform &&
+      Capacitor.getPlatform() === "android"
+    ) {
+      // Further protect against ES module analysis by Vite/Rollup
+      // Only do the import *inside* the runtime check
+      import('capacitor-android-fullscreen')
+        .then(({ FullScreen }) => {
+          FullScreen.enable();
+        })
+        .catch(() => {}); // Ignore if it fails (e.g., not available on web)
+    }
+  }, []);
+
 
   // === Multiplayer wiring ===
   // Host: handle incoming actions from any peer.
