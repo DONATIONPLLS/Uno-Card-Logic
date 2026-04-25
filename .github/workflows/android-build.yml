@@ -87,6 +87,16 @@ jobs:
           npx cap sync android
         working-directory: artifacts/uno-buddy
 
+      - name: Install Capacitor fullscreen plugin
+        run: |
+          pnpm add capacitor-android-fullscreen
+        working-directory: artifacts/uno-buddy
+
+      - name: Sync Capacitor plugins
+        run: |
+          npx cap sync android
+        working-directory: artifacts/uno-buddy
+
       - name: Build Android APK
         working-directory: artifacts/uno-buddy/android
         run: |
