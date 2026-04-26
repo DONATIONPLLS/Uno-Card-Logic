@@ -4,11 +4,6 @@
     pkgs.nodejs_20
     pkgs.pnpm
     pkgs.android-sdk
-  ];
-  previews = [
-    {
-      command = "pnpm run dev";
-      manager = "web";
-    }
+    pkgs.corepack_21
   ];
 }
