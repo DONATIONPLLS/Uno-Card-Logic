@@ -37,12 +37,15 @@ jobs:
 
       - name: Sync Capacitor Android
         run: |
-          # If the android folder is broken or missing the gradle wrapper, delete and recreate it
+          # Ensure the CLI and Android platform are actually present
+          pnpm add -D @capacitor/cli @capacitor/android
+          
+          # If gradlew is missing, recreate the android project
           if [ ! -f "android/gradlew" ]; then
             rm -rf android
-            npx cap add android
+            pnpm exec cap add android
           fi
-          npx cap sync android
+          pnpm exec cap sync android
           
 
       - name: Apply True Immersive Mode
