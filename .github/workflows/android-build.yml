@@ -30,9 +30,7 @@ jobs:
           java-version: 21
 
       - name: Install dependencies
-        run: |
-          pnpm install --no-frozen-lockfile
-          pnpm install class-variance-authority @radix-ui/react-avatar @radix-ui/react-aspect-ratio @radix-ui/react-alert-dialog @radix-ui/react-accordion lucide-react
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build project
         run: pnpm build
