@@ -35,6 +35,16 @@ jobs:
       - name: Build project
         run: pnpm build
 
+      - name: Sync Capacitor Android
+        run: |
+          # If the android folder is broken or missing the gradle wrapper, delete and recreate it
+          if [ ! -f "android/gradlew" ]; then
+            rm -rf android
+            npx cap add android
+          fi
+          npx cap sync android
+          
+
       - name: Apply True Immersive Mode
         run: |
           find android -name MainActivity.java -exec sed -i 's/import android.view.View;//g' {} +
