@@ -34,8 +34,6 @@ type Screen =
   | "game"
   | "scoring";
 
-type Intent = "offline" | "online-host" | "online-join";
-
 function loadGame(): GameState | null {
   if (typeof window === "undefined") return null;
   const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -63,7 +61,6 @@ interface MultiSession {
 
 function App() {
   const [screen, setScreen] = useState<Screen>("menu");
-  const [intent, setIntent] = useState<Intent>("offline");
   const [chosenMode, setChosenMode] = useState<GameMode>("standard");
   const [game, setGame] = useState<GameState | null>(() => loadGame());
   const [showRules, setShowRules] = useState(false);
@@ -224,7 +221,6 @@ function App() {
           onBack={() => setScreen("menu")}
           onChoose={(choice) => {
             if (choice === "offline") {
-              setIntent("offline");
               setScreen("modeOffline");
             } else {
               // Local network — first sub-choice is host vs join
@@ -238,11 +234,9 @@ function App() {
         <NetworkChoice
           onBack={() => setScreen("startMode")}
           onHost={() => {
-            setIntent("online-host");
             setScreen("modeOnline");
           }}
           onJoin={() => {
-            setIntent("online-join");
             setScreen("joinLobby");
           }}
         />
