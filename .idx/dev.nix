@@ -15,7 +15,6 @@
         web = {
           command = [
             "pnpm"
-            "run"
             "dev"
             "--port"
             "$PORT"
@@ -29,10 +28,7 @@
 
     workspace = {
       onCreate = {
-        install = {
-          command = "pnpm install";
-          description = "Installing dependencies";
-        };
+        install = "pnpm install --no-frozen-lockfile";
       };
       onStart = {};
     };
