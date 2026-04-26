@@ -3,7 +3,7 @@
 
   packages = [
     pkgs.nodejs_20
-    pkgs.corepack_21
+    pkgs.pnpm
   ];
 
   idx = {
