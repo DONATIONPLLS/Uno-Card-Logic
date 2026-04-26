@@ -1,36 +1,18 @@
 { pkgs, ... }: {
-  channel = "stable-23.11";
+  channel = "stable-24.05";
 
   packages = [
     pkgs.nodejs_20
     pkgs.pnpm
   ];
 
-  idx = {
-    extensions = [];
-
+  idx.previews = {
+    enable = true;
     previews = {
-      enable = true;
-      previews = {
-        web = {
-          command = [
-            "pnpm"
-            "dev"
-            "--port"
-            "$PORT"
-            "--host"
-            "0.0.0.0"
-          ];
-          manager = "web";
-        };
+      web = {
+        command = ["pnpm" "run" "dev" "--port" "$PORT" "--host" "0.0.0.0"];
+        manager = "web";
       };
-    };
-
-    workspace = {
-      onCreate = {
-        install = "pnpm install --no-frozen-lockfile";
-      };
-      onStart = {};
     };
   };
 }
