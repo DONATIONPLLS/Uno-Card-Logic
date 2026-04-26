@@ -19,7 +19,7 @@ const ovalColor: Record<WildColor, string> = {
 const cornerLabel: Record<CardValue, string> = {
   "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
   "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
-  skip: "⊘", reverse: "↺", draw2: "+2", wild: "★", wild4: "+4",
+  skip: "⊘", reverse: "↺", draw2: "+2", wild: "★", wild4: "+4", flip: "⇄",
 };
 
 export type CardSize = "sm" | "md" | "lg";
@@ -156,6 +156,7 @@ function bigGlyph(v: CardValue): string {
     case "draw2": return "+2";
     case "wild": return "";
     case "wild4": return "+4";
+    case "flip": return "⇄";
     default: return v;
   }
 }

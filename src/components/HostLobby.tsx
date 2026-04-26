@@ -13,8 +13,6 @@ import {
   type PlayerConfig,
 } from "@/lib/uno-engine";
 
-const MAX_SLOTS = 4;
-
 type Slot =
   | { kind: "host"; name: string }
   | { kind: "open" }
