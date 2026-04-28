@@ -1,13 +1,46 @@
 @import "tailwindcss";
 @source "../src";
 
+/*
+ * Safe-area inset utilities.
+ * These complement Tailwind v4 — use .pt-safe on headers,
+ * .pb-safe on bottom bars. The background on all screens
+ * extends edge-to-edge because root has NO padding.
+ */
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Use on headers that need ≥ safe-area-top + their own padding */
+  .pt-safe-header {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
+  }
+}
+
 @layer base {
-  html, body, #root {
+  /*
+   * Root fills the FULL screen including behind the status bar
+   * and navigation bar. Safe areas are handled per-component
+   * so backgrounds bleed to all edges (Subway Surfers style).
+   */
+  html,
+  body,
+  #root {
     margin: 0;
     padding: 0;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
-    background-color: black;
+    overscroll-behavior: none;
+    background-color: #000;
+    /* lock to viewport; prevents rubber-band scroll on Android WebView */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
   }
 }
