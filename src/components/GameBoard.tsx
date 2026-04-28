@@ -95,11 +95,13 @@ export function GameBoard({
   const lastHumanRef = useRef<number | null>(null);
   const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
   const wonRef = useRef(false);
-  const [announcement, setAnnouncement] = useState<{ text: string; color: UnoColor | "white" } | null>(null);
+  const [announcement, setAnnouncement] = useState<{
+    text: string;
+    color: UnoColor | "white";
+  } | null>(null);
   const lastTopRef = useRef<UnoCard | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Refs / state for the flight animation system
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const drawPileRef = useRef<HTMLDivElement | null>(null);
   const discardRef = useRef<HTMLDivElement | null>(null);
@@ -131,13 +133,12 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-  // ===== Card flight animations + audio cues for state diffs =====
+  // ── Card flight animations ──
   useEffect(() => {
     const prev = prevGameRef.current;
     prevGameRef.current = game;
     if (prev === game) return;
 
-    // Detect deck reshuffle (drawPile grew without anyone drawing — only happens on reshuffle)
     if (game.drawPile.length > prevDrawLenRef.current + 0) {
       const grew = game.drawPile.length - prevDrawLenRef.current;
       if (grew > 5) sfx.shuffle();
@@ -159,8 +160,6 @@ export function GameBoard({
         const dst = discardRef.current;
         if (!dst || !playedCard) return;
         const d = dst.getBoundingClientRect();
-
-        // Prefer the captured hand-card position (viewer plays); else fall back to seat avatar
         let startX: number;
         let startY: number;
         if (
@@ -178,7 +177,6 @@ export function GameBoard({
         } else {
           return;
         }
-
         newFlights.push({
           id: `play-${playedCard.id}-${now}`,
           card: playedCard,
@@ -191,7 +189,6 @@ export function GameBoard({
         const src = drawPileRef.current;
         if (!src) return;
         const s = src.getBoundingClientRect();
-        // Destination: end of viewer's hand zone for the viewer; seat avatar for others
         let endX: number;
         let endY: number;
         if (i === handViewIdx && handZoneRef.current) {
@@ -228,7 +225,7 @@ export function GameBoard({
     return () => clearTimeout(t);
   }, [game, handViewIdx]);
 
-  // Win detection
+  // ── Win detection ──
   useEffect(() => {
     if (game.winner !== null && !wonRef.current) {
       wonRef.current = true;
@@ -241,7 +238,7 @@ export function GameBoard({
     return undefined;
   }, [game.winner, game.players]);
 
-  // Action card announcement + impact SFX
+  // ── Action card announcement ──
   useEffect(() => {
     const prev = lastTopRef.current;
     lastTopRef.current = top;
@@ -249,29 +246,28 @@ export function GameBoard({
     let msg: string | null = null;
     let heavy = false;
     switch (top.value) {
-      case "skip": msg = "SKIPPED!"; heavy = true; break;
-      case "reverse": msg = "REVERSE!"; break;
-      case "draw2": msg = "+2 DRAW!"; heavy = true; break;
-      case "wild4": msg = "+4 WILD!"; heavy = true; break;
-      case "wild": msg = "WILD!"; break;
-      case "0": if (game.houseRules.sevenZero) msg = "ALL PASS!"; break;
-      case "7": if (game.houseRules.sevenZero) msg = "SWAP!"; break;
+      case "skip":   msg = "SKIPPED!";  heavy = true; break;
+      case "reverse": msg = "REVERSE!";              break;
+      case "draw2":  msg = "+2 DRAW!"; heavy = true; break;
+      case "wild4":  msg = "+4 WILD!"; heavy = true; break;
+      case "wild":   msg = "WILD!";                  break;
+      case "0":  if (game.houseRules.sevenZero) msg = "ALL PASS!"; break;
+      case "7":  if (game.houseRules.sevenZero) msg = "SWAP!";     break;
+      // Flip mode: show text announcement only — NO screen rotation
       case "flip": msg = "FLIP!"; heavy = true; break;
     }
     if (msg) {
-      const c: UnoColor | "white" = top.color === "wild" ? game.activeColor : top.color;
+      const c: UnoColor | "white" =
+        top.color === "wild" ? game.activeColor : top.color;
       setAnnouncement({ text: msg, color: c });
-      if (heavy) {
-        sfx.impact();
-        haptics.heavy();
-      }
+      if (heavy) { sfx.impact(); haptics.heavy(); }
       const t = setTimeout(() => setAnnouncement(null), 1500);
       return () => clearTimeout(t);
     }
     return undefined;
   }, [top, game.houseRules.sevenZero, game.activeColor]);
 
-  // Pass-and-play overlays
+  // ── Pass-and-play overlays ──
   useEffect(() => {
     if (!isPassAndPlay) {
       setRevealed(true);
@@ -286,25 +282,14 @@ export function GameBoard({
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
 
-    if (game.winner !== null) {
-      setRevealed(true);
-      setOverlayKind(null);
-      return;
-    }
+    if (game.winner !== null) { setRevealed(true); setOverlayKind(null); return; }
     const cur = game.players[currentIdx];
-    if (cur.kind === "bot") {
-      setRevealed(true);
-      setOverlayKind(null);
-      return;
-    }
+    if (cur.kind === "bot") { setRevealed(true); setOverlayKind(null); return; }
     const lastHuman = lastHumanRef.current;
     if (lastHuman === currentIdx) {
-      setRevealed(true);
-      setOverlayKind(null);
-      sfx.ding();
+      setRevealed(true); setOverlayKind(null); sfx.ding();
     } else {
-      setRevealed(false);
-      setOverlayKind("pass");
+      setRevealed(false); setOverlayKind("pass");
     }
   }, [currentIdx, game.players, game.winner, isPassAndPlay]);
 
@@ -314,18 +299,14 @@ export function GameBoard({
     }
   }, [revealed, currentIdx, currentPlayer?.kind]);
 
-  // "Your turn!" alert when control transfers to the viewing human (network mode)
+  // ── Your-turn alert (network mode) ──
   useEffect(() => {
     if (isPassAndPlay) return;
-    if (myTurn && !viewerIsBot) {
-      sfx.yourTurn();
-      haptics.medium();
-    }
-    // intentionally only fires when myTurn flips true
+    if (myTurn && !viewerIsBot) { sfx.yourTurn(); haptics.medium(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myTurn, isPassAndPlay, viewerIsBot]);
 
-  // Bot loop
+  // ── Bot loop ──
   useEffect(() => {
     if (!enableBots) return;
     if (game.winner !== null) return;
@@ -412,16 +393,10 @@ export function GameBoard({
     const playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     setDrawArmed(false);
     if (!playable) {
-      sfx.click();
-      haptics.light();
-      setSelectedId(cardId);
-      return;
+      sfx.click(); haptics.light(); setSelectedId(cardId); return;
     }
     if (selectedId !== cardId) {
-      sfx.click();
-      haptics.light();
-      setSelectedId(cardId);
-      return;
+      sfx.click(); haptics.light(); setSelectedId(cardId); return;
     }
     confirmPlay();
   };
@@ -432,13 +407,9 @@ export function GameBoard({
     if (!card) return;
     const playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     if (!playable) return;
-    if (card.color === "wild") {
-      setPickColorFor(selectedId);
-      return;
-    }
+    if (card.color === "wild") { setPickColorFor(selectedId); return; }
     captureOriginFor(selectedId);
-    sfx.swish();
-    haptics.medium();
+    sfx.swish(); haptics.medium();
     act.play(selectedId);
     setSelectedId(null);
   };
@@ -446,8 +417,7 @@ export function GameBoard({
   const handlePickColor = (color: UnoColor) => {
     if (!pickColorFor) return;
     captureOriginFor(pickColorFor);
-    sfx.swish();
-    haptics.medium();
+    sfx.swish(); haptics.medium();
     act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
@@ -456,19 +426,10 @@ export function GameBoard({
   const onDrawPileTap = () => {
     if (!myTurn || !revealed || viewerIsBot) return;
     if (game.pendingAction !== null) return;
-    if (selectedId) {
-      setSelectedId(null);
-      return;
-    }
+    if (selectedId) { setSelectedId(null); return; }
     if (hasDrawnThisTurn) return;
-    if (!drawArmed) {
-      sfx.click();
-      haptics.light();
-      setDrawArmed(true);
-      return;
-    }
-    sfx.draw();
-    haptics.light();
+    if (!drawArmed) { sfx.click(); haptics.light(); setDrawArmed(true); return; }
+    sfx.draw(); haptics.light();
     act.draw();
     setHasDrawnThisTurn(true);
     setDrawArmed(false);
@@ -501,7 +462,8 @@ export function GameBoard({
 
   const myHand = game.hands[handViewIdx] ?? [];
   const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
-  const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
+  const canPass =
+    myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
@@ -515,8 +477,17 @@ export function GameBoard({
   }));
   const seatAt = (pos: SeatPos) => seated.find((s) => s.pos === pos);
 
+  /*
+   * FLIP MODE FIX:
+   * The previous code animated `rotateY: 180` on the outer container which
+   * physically flipped the entire screen (players had to tilt their phones).
+   * Now: only the table background colour changes to signal the dark side.
+   * Cards already show the correct face — no rotation needed.
+   */
   const tableBg = flipMode
-    ? "radial-gradient(ellipse at center, #1d1f23 0%, #0d0e10 60%, #000 100%)"
+    ? game.gameSide === "dark"
+      ? "radial-gradient(ellipse at center, #0f0f14 0%, #06060a 55%, #000 100%)"
+      : "radial-gradient(ellipse at center, #1d1f23 0%, #0d0e10 60%, #000 100%)"
     : "radial-gradient(ellipse at center, hsl(140 60% 18%) 0%, hsl(140 60% 10%) 55%, #000 100%)";
 
   const toneFor = (idx: number): AvatarTone => {
@@ -527,13 +498,19 @@ export function GameBoard({
   };
 
   return (
-    <motion.div
+    /*
+     * Plain <div> — no rotateY transform, no framer-motion on the shell.
+     * The background fills the full screen; the header gets safe-area padding.
+     */
+    <div
       className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
       style={{ background: tableBg }}
-      animate={{ rotateY: game.gameSide === "dark" ? 180 : 0 }}
-      transition={{ duration: 0.5 }}
     >
-      <header className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-black/40 backdrop-blur-xl z-10 gap-2">
+      {/* Header — safe-area-aware so content clears the status bar */}
+      <header
+        className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-black/40 backdrop-blur-xl z-10 gap-2"
+        style={{ paddingTop: "max(env(safe-area-inset-top), 0.5rem)" }}
+      >
         <button
           onClick={() => { sfx.click(); haptics.light(); onExit(); }}
           className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0"
@@ -563,6 +540,11 @@ export function GameBoard({
               +{game.pendingDraw}
             </span>
           ) : null}
+          {flipMode && game.gameSide === "dark" ? (
+            <span className="px-2 py-0.5 rounded bg-purple-500/40 text-purple-100 text-[10px] font-bold shrink-0">
+              DARK
+            </span>
+          ) : null}
         </div>
         <button
           onClick={() => { sfx.click(); haptics.light(); setShowRules(true); }}
@@ -581,7 +563,7 @@ export function GameBoard({
               hand={game.hands[seatAt("top")!.idx]}
               player={game.players[seatAt("top")!.idx]}
               idx={seatAt("top")!.idx}
-              tone={toneFor(seatAt("top")!.idx)}
+                            tone={toneFor(seatAt("top")!.idx)}
               flipMode={flipMode}
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
@@ -617,19 +599,20 @@ export function GameBoard({
           ) : null}
         </div>
 
+        {/* Centre: draw pile + discard pile */}
         <div
           className="row-start-2 col-start-2 flex items-center justify-center gap-4"
-          onClick={() => {
-            setSelectedId(null);
-            setDrawArmed(false);
-          }}
+          onClick={() => { setSelectedId(null); setDrawArmed(false); }}
         >
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDrawPileTap();
-            }}
-            disabled={!myTurn || !revealed || hasDrawnThisTurn || game.pendingAction !== null || viewerIsBot}
+            onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+            disabled={
+              !myTurn ||
+              !revealed ||
+              hasDrawnThisTurn ||
+              game.pendingAction !== null ||
+              viewerIsBot
+            }
             className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
               myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot
                 ? "active:scale-95"
@@ -648,23 +631,27 @@ export function GameBoard({
               {hasDrawnThisTurn ? "Drew" : drawArmed ? "Tap again" : "Draw"} ({game.drawPile.length})
             </span>
           </button>
+
           <div className="flex flex-col items-center gap-1">
-            <motion.div ref={discardRef} key={visibleTop.id} className="animate-[flyIn_.35s_ease-out]" layoutId={`card-${visibleTop.id}`}>
+            <motion.div
+              ref={discardRef}
+              key={visibleTop.id}
+              className="animate-[flyIn_.35s_ease-out]"
+              layoutId={`card-${visibleTop.id}`}
+            >
               <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
             </motion.div>
             <span className="text-[10px] text-white/60">Top</span>
           </div>
         </div>
 
+        {/* Announcement overlay */}
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div
               className="font-black tracking-wider animate-[impactPop_1.5s_cubic-bezier(.22,1.6,.36,1)_forwards] select-none"
               style={{
-                color:
-                  announcement.color === "white"
-                    ? "#ffffff"
-                    : impactHex[announcement.color],
+                color: announcement.color === "white" ? "#ffffff" : impactHex[announcement.color],
                 WebkitTextStroke: "2px #1a1a1a",
                 fontSize: "clamp(3rem, 11vw, 6rem)",
                 letterSpacing: "0.04em",
@@ -678,13 +665,14 @@ export function GameBoard({
         ) : null}
       </div>
 
+      {/* Log */}
       <div className="mx-3 mb-2 max-h-14 overflow-y-auto rounded-md bg-black/40 border border-white/10 px-3 py-1.5 text-[11px] text-white/80 space-y-0.5 z-10">
         {game.log.slice(0, 4).map((line, i) => (
           <div key={i}>{line}</div>
         ))}
       </div>
 
-      {/* Hand */}
+      {/* Player hand */}
       <div className="border-t border-white/10 pt-2 pb-3 bg-black/55 backdrop-blur-xl z-10">
         <div className="flex items-center justify-between mb-2 px-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -738,7 +726,8 @@ export function GameBoard({
               {myHand.map((c, i) => {
                 const showFaceDown = viewerIsBot || (!revealed && myTurn && isPassAndPlay);
                 const playable =
-                  myTurn && !viewerIsBot &&
+                  myTurn &&
+                  !viewerIsBot &&
                   isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules);
                 const selected = selectedId === c.id;
                 return (
@@ -778,13 +767,11 @@ export function GameBoard({
           </div>
         </div>
         {viewerIsBot ? (
-          <div className="text-center text-[11px] text-white/45 mt-1">
-            AI turn — cards hidden
-          </div>
+          <div className="text-center text-[11px] text-white/45 mt-1">AI turn — cards hidden</div>
         ) : null}
       </div>
 
-      {/* Card flight overlay */}
+      {/* Flight overlay */}
       <div className="fixed inset-0 pointer-events-none z-40">
         {flights.map((f) => (
           <motion.div
@@ -855,9 +842,13 @@ export function GameBoard({
       ) : null}
 
       {showRules ? <RulesPanel onClose={() => setShowRules(false)} /> : null}
-    </motion.div>
+    </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
 
 const tableGridStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(60px, 1fr) 3fr minmax(60px, 1fr)",
@@ -896,9 +887,7 @@ function TurnBadge({
       className={`flex items-center gap-1.5 px-2 py-1 rounded-full border backdrop-blur-md min-w-0 max-w-[40%] ${styles}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dot} animate-pulse`} />
-      <span className="text-[9px] uppercase tracking-widest font-bold text-white/70">
-        {label}
-      </span>
+      <span className="text-[9px] uppercase tracking-widest font-bold text-white/70">{label}</span>
       <span className="text-[11px] font-semibold truncate">{name}</span>
     </span>
   );
@@ -929,7 +918,6 @@ function SeatView({
     <div className="flex flex-col items-center gap-1">
       <div ref={avatarRef} className="relative">
         <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" tone={tone} />
-        {/* Score chip overlapping the avatar's bottom-left */}
         <span
           className="absolute -bottom-1 -left-2 px-1 rounded-md text-[9px] font-bold tabular-nums border border-[#facc15]/50 text-[#facc15] bg-black/70 backdrop-blur-sm"
           title="Score"
@@ -943,7 +931,9 @@ function SeatView({
         <div className="text-white/50">{hand.length} cards</div>
       </div>
       <div
-        className={`flex items-center ${orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"}`}
+        className={`flex items-center ${
+          orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"
+        }`}
       >
         {shown.map((c, i) => (
           <div
@@ -959,9 +949,7 @@ function SeatView({
             <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" />
           </div>
         ))}
-        {extra > 0 ? (
-          <div className="text-[10px] text-white/60 ml-1">+{extra}</div>
-        ) : null}
+        {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
       </div>
     </div>
   );
