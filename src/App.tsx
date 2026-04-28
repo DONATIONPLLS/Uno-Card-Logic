@@ -41,7 +41,6 @@ function loadGame(): GameState | null {
   try {
     const g = JSON.parse(saved) as GameState;
     if (!g.players || !g.hands) return null;
-    // Migrate older saves that predate scores
     if (!Array.isArray((g as any).scores)) {
       (g as any).scores = new Array(g.players.length).fill(0);
     }
@@ -68,7 +67,6 @@ function App() {
   const gameRef = useRef<GameState | null>(game);
   gameRef.current = game;
 
-  // Persist solo games only
   useEffect(() => {
     if (game && !multi) {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
@@ -76,7 +74,6 @@ function App() {
   }, [game, multi]);
 
   // === Multiplayer wiring ===
-  // Host: handle incoming actions from any peer.
   useEffect(() => {
     if (!multi || multi.role !== "host" || !multi.host) return;
     const h = multi.host;
@@ -86,7 +83,6 @@ function App() {
       if (peerIdx === undefined) return;
       setGame((g) => {
         if (!g) return g;
-        // Validate that this peer is the current player.
         if (g.currentPlayer !== peerIdx && msg.action.kind !== "swap") return g;
         if (
           msg.action.kind === "swap" &&
@@ -102,18 +98,14 @@ function App() {
         return g;
       });
     });
-    h.onLeave(() => {
-      // Player disconnected mid-game — keep game running (their slot just won't act).
-    });
+    h.onLeave(() => {});
   }, [multi]);
 
-  // Host: broadcast latest state on every game change. (Source of truth)
   useEffect(() => {
     if (!multi || multi.role !== "host" || !multi.host || !game) return;
     multi.host.broadcast({ type: "state", game } as SyncMessage);
   }, [game, multi]);
 
-  // Joiner: incoming state updates the local game.
   useEffect(() => {
     if (!multi || multi.role !== "join" || !multi.join) return;
     const j = multi.join;
@@ -161,19 +153,13 @@ function App() {
     multi?.role === "join" && multi.join
       ? {
           play: (cardId, color) =>
-            multi.join!.send({
-              type: "action",
-              action: { kind: "play", cardId, color },
-            }),
+            multi.join!.send({ type: "action", action: { kind: "play", cardId, color } }),
           draw: () =>
             multi.join!.send({ type: "action", action: { kind: "draw" } }),
           endTurn: () =>
             multi.join!.send({ type: "action", action: { kind: "endTurn" } }),
           resolveSwap: (targetIdx) =>
-            multi.join!.send({
-              type: "action",
-              action: { kind: "swap", targetIdx },
-            }),
+            multi.join!.send({ type: "action", action: { kind: "swap", targetIdx } }),
         }
       : undefined;
 
@@ -202,10 +188,12 @@ function App() {
   };
 
   return (
-    <div
-      key={screen}
-      className="animate-[fadeSlide_.28s_cubic-bezier(.2,.8,.2,1)] pt-[env(safe-area-inset-top)]"
-    >
+    /*
+     * NO top padding here — the background on every child screen bleeds
+     * fully behind the status bar (Subway Surfers style).
+     * Individual headers apply pt-safe / pt-safe-header themselves.
+     */
+    <div className="animate-[fadeSlide_.28s_cubic-bezier(.2,.8,.2,1)]">
       {screen === "menu" ? (
         <MainMenu
           hasSavedGame={game !== null && game.winner === null && !multi}
@@ -223,7 +211,6 @@ function App() {
             if (choice === "offline") {
               setScreen("modeOffline");
             } else {
-              // Local network — first sub-choice is host vs join
               setScreen("joinFlow");
             }
           }}
@@ -233,12 +220,8 @@ function App() {
       {screen === "joinFlow" ? (
         <NetworkChoice
           onBack={() => setScreen("startMode")}
-          onHost={() => {
-            setScreen("modeOnline");
-          }}
-          onJoin={() => {
-            setScreen("joinLobby");
-          }}
+          onHost={() => setScreen("modeOnline")}
+          onJoin={() => setScreen("joinLobby")}
         />
       ) : null}
 
@@ -307,35 +290,33 @@ function App() {
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes fadeSlide {
           from { opacity: 0; transform: translateY(8px) scale(.995); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+          to   { opacity: 1; transform: translateY(0)   scale(1);    }
         }
         @keyframes flyIn {
           from { opacity: 0; transform: translateY(-180px) scale(.7) rotate(-12deg); }
-          60% { opacity: 1; }
-          to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+          60%  { opacity: 1; }
+          to   { opacity: 1; transform: translateY(0)       scale(1) rotate(0);     }
         }
         @keyframes flyTo {
-          0% {
-            transform: translate(var(--sx), var(--sy)) scale(.7) rotate(-18deg);
-            opacity: 0;
-          }
-          15% { opacity: 1; }
-          100% {
-            transform: translate(var(--ex), var(--ey)) scale(1) rotate(0deg);
-            opacity: 1;
-          }
+          0%   { transform: translate(var(--sx),var(--sy)) scale(.7) rotate(-18deg); opacity:0; }
+          15%  { opacity: 1; }
+          100% { transform: translate(var(--ex),var(--ey)) scale(1)  rotate(0deg);  opacity:1; }
         }
         @keyframes impactPop {
-          0% { transform: scale(.5); opacity: 0; }
-          22% { transform: scale(1.2); opacity: 1; }
-          38% { transform: scale(1); opacity: 1; }
-          70% { transform: scale(1) translateY(0); opacity: 1; }
-          100% { transform: scale(1) translateY(-70px); opacity: 0; }
+          0%   { transform: scale(.5);    opacity: 0; }
+          22%  { transform: scale(1.2);   opacity: 1; }
+          38%  { transform: scale(1);     opacity: 1; }
+          70%  { transform: scale(1) translateY(0);    opacity: 1; }
+          100% { transform: scale(1) translateY(-70px);opacity: 0; }
         }
       `}</style>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Inline screens
+// ---------------------------------------------------------------------------
 
 function NetworkChoice({
   onBack,
@@ -354,7 +335,11 @@ function NetworkChoice({
           "radial-gradient(ellipse 60% 60% at 30% 10%, hsl(280 50% 22% / 0.65), transparent 60%), radial-gradient(ellipse 60% 60% at 80% 90%, hsl(215 50% 18% / 0.65), transparent 60%), #060608",
       }}
     >
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-black/30 backdrop-blur-xl">
+      {/* pt-safe ensures content clears the status bar; background bleeds behind it */}
+      <header
+        className="flex items-center gap-3 px-4 pb-3 border-b border-white/10 bg-black/30 backdrop-blur-xl"
+        style={{ paddingTop: "max(env(safe-area-inset-top), 0.75rem)" }}
+      >
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center"
@@ -363,33 +348,36 @@ function NetworkChoice({
         </button>
         <h1 className="text-base font-semibold tracking-wide">Local Network</h1>
       </header>
+
       <div className="flex-1 px-5 py-6 max-w-md mx-auto w-full flex flex-col gap-3 justify-center">
         <button
           onClick={onHost}
           className="rounded-3xl bg-gradient-to-br from-[hsl(280_55%_35%)]/40 to-[hsl(260_55%_22%)]/30 border border-[hsl(280_55%_55%)]/30 backdrop-blur-2xl px-5 py-6 text-left active:scale-[.98] transition shadow-[0_8px_60px_-30px_hsl(280_60%_55%/.7)] relative"
         >
           <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-          <div className="text-xs uppercase tracking-[0.25em] text-white/55 font-semibold">
-            Be the host
-          </div>
+          <div className="text-xs uppercase tracking-[0.25em] text-white/55 font-semibold">Be the host</div>
           <div className="text-2xl font-bold mt-0.5">Create a Room</div>
           <p className="text-sm text-white/70 mt-2 leading-relaxed">
             Get a 4-digit code to share. You set the mode and manage the lobby.
           </p>
         </button>
+
         <button
           onClick={onJoin}
           className="rounded-3xl bg-gradient-to-br from-[hsl(215_70%_30%)]/40 to-[hsl(215_70%_18%)]/30 border border-[hsl(215_70%_60%)]/30 backdrop-blur-2xl px-5 py-6 text-left active:scale-[.98] transition shadow-[0_8px_60px_-30px_hsl(215_70%_55%/.7)] relative"
         >
           <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-          <div className="text-xs uppercase tracking-[0.25em] text-white/55 font-semibold">
-            Join a friend
-          </div>
+          <div className="text-xs uppercase tracking-[0.25em] text-white/55 font-semibold">Join a friend</div>
           <div className="text-2xl font-bold mt-0.5">Enter a Code</div>
           <p className="text-sm text-white/70 mt-2 leading-relaxed">
             Enter the 4-digit code your host shared with you.
           </p>
         </button>
+
+        <p className="text-[11px] text-white/40 text-center px-2 leading-relaxed">
+          Both devices must share the same Wi-Fi or hotspot.
+          The initial handshake uses a relay — actual game data travels directly between devices.
+        </p>
       </div>
     </div>
   );
@@ -398,7 +386,10 @@ function NetworkChoice({
 function ScoringPlaceholder({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[hsl(215_85%_25%)] via-neutral-900 to-black text-white">
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+      <header
+        className="flex items-center gap-3 px-4 pb-3 border-b border-white/10"
+        style={{ paddingTop: "max(env(safe-area-inset-top), 0.75rem)" }}
+      >
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center"
