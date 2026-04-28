@@ -125,13 +125,11 @@ function openPeer(peerId: string | undefined, config?: PeerServerConfig): Promis
  */
 async function connectWithFallback(peerId?: string): Promise<Peer> {
   const attempts: Array<PeerServerConfig | undefined> = [...CLOUD_SERVERS, undefined];
-  let lastErr: unknown;
 
   for (const cfg of attempts) {
     try {
       return await openPeer(peerId, cfg);
     } catch (err) {
-      lastErr = err;
       // Don't retry on "room taken" — surface immediately.
       if ((err as Error).message !== "timeout" && (err as Error).message !== "server-error") {
         throw err;
