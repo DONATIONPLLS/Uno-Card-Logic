@@ -68,7 +68,6 @@ export interface GameState {
   scores: number[];
 }
 
-/** Standard Uno point values awarded to the winner per opponent's leftover card. */
 export function cardPointValue(c: UnoCard): number {
   if (c.value === "wild" || c.value === "wild4") return 50;
   if (c.value === "skip" || c.value === "reverse" || c.value === "draw2" || c.value === "flip") return 20;
@@ -94,13 +93,8 @@ const nextId = () => `c${++idCounter}`;
 export function buildDeck(allWild = false): UnoCard[] {
   const deck: UnoCard[] = [];
   if (allWild) {
-    // Pure wild deck — only Wild and Wild Draw 4 cards.
-    for (let i = 0; i < 36; i++) {
-      deck.push({ id: nextId(), color: "wild", value: "wild" });
-    }
-    for (let i = 0; i < 24; i++) {
-      deck.push({ id: nextId(), color: "wild", value: "wild4" });
-    }
+    for (let i = 0; i < 36; i++) deck.push({ id: nextId(), color: "wild", value: "wild" });
+    for (let i = 0; i < 24; i++) deck.push({ id: nextId(), color: "wild", value: "wild4" });
     return deck;
   }
   for (const color of COLORS) {
@@ -132,6 +126,17 @@ export function shuffle<T>(arr: T[]): T[] {
   return out;
 }
 
+/**
+ * Determines whether `card` is a legal play given the current game state.
+ *
+ * STACKING FIX (Bug #1):
+ *   When pendingDraw > 0 and stacking is enabled, the player may play:
+ *     - Another +2 (when a +2 is pending)  — escalates the draw
+ *     - Any card matching the activeColor   — "colour escape" house rule
+ *     - Another +4 (when a +4 is pending)  — escalates the draw
+ *   Previously the code only allowed same-value stacking, making it
+ *   impossible to play a colour-matching non-draw card.
+ */
 export function isValidMove(
   card: UnoCard,
   topCard: UnoCard,
@@ -139,13 +144,31 @@ export function isValidMove(
   pendingDraw: number,
   rules: HouseRules,
 ): boolean {
+  // ── All-Wild mode: every card plays on everything ──
+  if (rules.allWild) return true;
+
+  // ── Pending draw: only stacking moves are legal ──
   if (pendingDraw > 0) {
     if (!rules.stackDraws) return false;
-    if (topCard.value === "draw2" && card.value === "draw2") return true;
-    if (topCard.value === "wild4" && card.value === "wild4") return true;
+
+    if (topCard.value === "draw2") {
+      // Another +2 escalates; any same-colour card escapes the penalty
+      if (card.value === "draw2") return true;
+      if (card.color !== "wild" && card.color === activeColor) return true;
+      return false;
+    }
+
+    if (topCard.value === "wild4") {
+      // Another +4 escalates; any same-colour card escapes the penalty
+      if (card.value === "wild4") return true;
+      if (card.color !== "wild" && card.color === activeColor) return true;
+      return false;
+    }
+
     return false;
   }
-  if (rules.allWild) return true;
+
+  // ── Normal turn ──
   if (card.color === "wild") return true;
   if (card.color === activeColor) return true;
   if (card.value === topCard.value) return true;
@@ -194,9 +217,10 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     pendingAction: null,
     log: [`Game started. Top card: ${describe(first)}.`, `${nameOf(players[0])} starts.`],
     winner: null,
-    scores: opts.previousScores && opts.previousScores.length === players.length
-      ? [...opts.previousScores]
-      : new Array(players.length).fill(0),
+    scores:
+      opts.previousScores && opts.previousScores.length === players.length
+        ? [...opts.previousScores]
+        : new Array(players.length).fill(0),
   };
 }
 
@@ -205,10 +229,13 @@ export function nameOf(p: PlayerConfig): string {
 }
 
 export function describe(c: UnoCard): string {
-  const colorName = c.color === "wild" ? "" : c.color.charAt(0).toUpperCase() + c.color.slice(1) + " ";
+  const colorName =
+    c.color === "wild" ? "" : c.color.charAt(0).toUpperCase() + c.color.slice(1) + " ";
   const valueName: Record<CardValue, string> = {
-    "0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
-    skip: "Skip", reverse: "Reverse", draw2: "Draw 2", wild: "Wild", wild4: "Wild Draw 4", flip: "Flip"
+    "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
+    "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
+    skip: "Skip", reverse: "Reverse", draw2: "Draw 2",
+    wild: "Wild", wild4: "Wild Draw 4", flip: "Flip",
   };
   return (colorName + valueName[c.value]).trim();
 }
@@ -295,7 +322,6 @@ export function playCard(
       break;
   }
 
-  // 7-0 rules
   if (s.houseRules.sevenZero && card.value === "0") {
     const dir = s.direction;
     const n = s.hands.length;
@@ -310,7 +336,9 @@ export function playCard(
 
   if (s.houseRules.sevenZero && card.value === "7") {
     s.pendingAction = { type: "swap7", from: playerIdx };
-    s.log.unshift(`${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`);
+    s.log.unshift(
+      `${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`,
+    );
     return s;
   }
 
@@ -334,7 +362,9 @@ export function resolveSwap(state: GameState, targetIdx: number): GameState {
   const tmp = s.hands[from];
   s.hands[from] = s.hands[targetIdx];
   s.hands[targetIdx] = tmp;
-  s.log.unshift(`${nameOf(s.players[from])} swapped hands with ${nameOf(s.players[targetIdx])}.`);
+  s.log.unshift(
+    `${nameOf(s.players[from])} swapped hands with ${nameOf(s.players[targetIdx])}.`,
+  );
   s.pendingAction = null;
   s.currentPlayer = nextPlayer(s);
   return s;
@@ -344,7 +374,9 @@ function canStack(state: GameState): boolean {
   if (!state.houseRules.stackDraws) return false;
   const top = state.discardPile[state.discardPile.length - 1];
   const hand = state.hands[state.currentPlayer];
-  return hand.some((c) => isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules));
+  return hand.some((c) =>
+    isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules),
+  );
 }
 
 export function hasPlayableCard(state: GameState, playerIdx: number): boolean {
@@ -373,7 +405,6 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
   return s;
 }
 
-// Smart bot: picks best playable card. Returns the move it wants to make.
 export type BotMove =
   | { type: "play"; cardId: string; chosenColor?: UnoColor }
   | { type: "draw" };
@@ -382,15 +413,15 @@ export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
   const hand = state.hands[playerIdx];
   const top = state.discardPile[state.discardPile.length - 1];
   const rules = state.houseRules;
-  const playable = hand.filter((c) => isValidMove(c, top, state.activeColor, state.pendingDraw, rules));
+  const playable = hand.filter((c) =>
+    isValidMove(c, top, state.activeColor, state.pendingDraw, rules),
+  );
   if (playable.length === 0) return { type: "draw" };
 
-  // Stacking case: just play the matching draw card
   if (state.pendingDraw > 0) {
     return { type: "play", cardId: playable[0].id };
   }
 
-  // Color counts in hand for wild choice
   const colorCount: Record<UnoColor, number> = { red: 0, yellow: 0, green: 0, blue: 0 };
   for (const c of hand) {
     if (c.color !== "wild") colorCount[c.color as UnoColor]++;
@@ -402,24 +433,20 @@ export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
 
   const cardScore = (c: UnoCard): number => {
     let score = 0;
-    // High-value action cards score higher
     switch (c.value) {
       case "draw2": score = 18; break;
       case "skip": score = 15; break;
       case "reverse": score = 14; break;
-      case "wild": score = 50; break;   // wilds are flexible — save by default
+      case "wild": score = 50; break;
       case "wild4": score = 60; break;
       case "flip": score = 100; break;
-      default: score = 5 + Number(c.value); // 5..14 for numbers
+      default: score = 5 + Number(c.value);
     }
-    // Save +2 / +4 unless opponent has 3 or fewer cards
     if (c.value === "draw2" || c.value === "wild4") {
       if (opponentMin <= 3) score += 100;
-      else score -= 30; // hold it
+      else score -= 30;
     }
-    // Save plain wild for when stuck (penalize playing it if alternatives exist)
     if (c.value === "wild") score -= 20;
-    // Prefer matching active color over a value-only match (keeps options open)
     if (c.color === state.activeColor) score += 5;
     return score;
   };
@@ -428,7 +455,6 @@ export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
   const choice = playable[0];
 
   if (choice.color === "wild") {
-    // pick color we hold most of
     let best: UnoColor = "red";
     let bestN = -1;
     for (const c of COLORS) {
@@ -444,7 +470,6 @@ export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
 }
 
 export function chooseBotSwapTarget(state: GameState): number {
-  // pick player with smallest hand (excluding self)
   if (state.pendingAction?.type !== "swap7") return state.currentPlayer;
   const from = state.pendingAction.from;
   let best = from;
