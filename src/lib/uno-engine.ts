@@ -90,7 +90,8 @@ const ACTIONS: CardValue[] = ["skip", "reverse", "draw2"];
 let idCounter = 0;
 const nextId = () => `c${++idCounter}`;
 
-export function buildDeck(allWild = false): UnoCard[] {
+// Update the function signature to accept the mode
+export function buildDeck(mode: GameMode, allWild = false): UnoCard[] {
   const deck: UnoCard[] = [];
   if (allWild) {
     for (let i = 0; i < 36; i++) deck.push({ id: nextId(), color: "wild", value: "wild" });
@@ -107,8 +108,12 @@ export function buildDeck(allWild = false): UnoCard[] {
       deck.push({ id: nextId(), color, value: a });
       deck.push({ id: nextId(), color, value: a });
     }
-    deck.push({ id: nextId(), color, value: "flip" });
-    deck.push({ id: nextId(), color, value: "flip" });
+    
+    // ONLY add Flip cards if we are actually playing Uno Flip!
+    if (mode === "flip") {
+      deck.push({ id: nextId(), color, value: "flip" });
+      deck.push({ id: nextId(), color, value: "flip" });
+    }
   }
   for (let i = 0; i < 4; i++) {
     deck.push({ id: nextId(), color: "wild", value: "wild" });
@@ -185,7 +190,8 @@ export interface NewGameOptions {
 export function dealNewGame(opts: NewGameOptions): GameState {
   const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
   const players = opts.players;
-  let deck = shuffle(buildDeck(houseRules.allWild));
+  // Pass the mode into the deck builder!
+  let deck = shuffle(buildDeck(opts.mode ?? "standard", houseRules.allWild));
   const hands: UnoCard[][] = [];
   for (let p = 0; p < players.length; p++) {
     hands.push(deck.splice(0, 7));
