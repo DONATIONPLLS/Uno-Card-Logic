@@ -9,8 +9,10 @@ const config: CapacitorConfig = {
   },
   android: {
     backgroundColor: "#000000",
-  }
-  // DELETED the plugins: { StatusBar: ... } block!
+    allowMixedContent: true,
+    captureInput: true
+  },
+  // WE REMOVED THE PLUGINS BLOCK ENTIRELY
 };
 
 export default config;
