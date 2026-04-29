@@ -673,7 +673,7 @@ export function GameBoard({
       </div>
 
       {/* Player hand */}
-      <div className="border-t border-white/10 pt-2 pb-3 bg-black/55 backdrop-blur-xl z-10">
+      <div className="border-t border-white/10 pt-2 pb-3 bg-[#0f0f13] z-10">
         <div className="flex items-center justify-between mb-2 px-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div ref={(el) => { seatRefs.current[handViewIdx] = el; }}>
