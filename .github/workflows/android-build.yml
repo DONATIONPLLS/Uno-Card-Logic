@@ -47,11 +47,6 @@ jobs:
           fi
           pnpm exec cap sync android    
 
-      - name: Apply True Immersive Mode
-        run: |
-          find android -name MainActivity.java -exec sed -i 's/import android.view.View;//g' {} +
-          find android -name MainActivity.java -exec sed -i 's/getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);/getWindow().setDecorView(null);/' {} +
-
       - name: Build Android APK
         run: |
           cd android
