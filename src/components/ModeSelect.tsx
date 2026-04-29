@@ -53,7 +53,10 @@ export function ModeSelect({
 }) {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-neutral-900 to-black text-white">
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+            <header 
+        className="flex items-center gap-3 px-4 pb-3 border-b border-white/10"
+        style={{ paddingTop: "max(env(safe-area-inset-top), 0.75rem)" }}
+      >
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center"
