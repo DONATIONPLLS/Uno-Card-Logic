@@ -507,8 +507,8 @@ export function GameBoard({
       style={{ background: tableBg }}
     >
       {/* Header — safe-area-aware so content clears the status bar */}
-      <header
-        className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-black/40 backdrop-blur-xl z-10 gap-2"
+            <header
+        className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-[#0a0a0c] z-10 gap-2"
         style={{ paddingTop: "max(env(safe-area-inset-top), 0.5rem)" }}
       >
         <button
