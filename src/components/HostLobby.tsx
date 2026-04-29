@@ -174,7 +174,7 @@ export function HostLobby({
           "radial-gradient(ellipse 60% 60% at 30% 10%, hsl(280 50% 22% / 0.65), transparent 60%), radial-gradient(ellipse 60% 60% at 80% 90%, hsl(215 50% 18% / 0.65), transparent 60%), #060608",
       }}
     >
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-black/30 backdrop-blur-xl">
+      <header className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-black/30 backdrop-blur-xl"style={{ paddingTop: "max(env(safe-area-inset-top), 0.75rem)" }}>
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center"
