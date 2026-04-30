@@ -47,20 +47,20 @@ jobs:
           fi
           pnpm exec cap sync android
 
-      - name: Force True Immersive Mode & App Polish
+      - name: Force True Immersive Mode (Absolute Fix)
         run: |
-          # 1. Find the MainActivity.java file
-          FILE=$(find android -name MainActivity.java | head -n1)
+          # 1. Find MainActivity.java anywhere in the project
+          FILE=$(find . -name MainActivity.java | head -n1)
+          if [ -z "$FILE" ]; then echo "MainActivity not found"; exit 1; fi
+          
           PKG_NAME=$(grep "^package " "$FILE")
           
-          # 2. Overwrite MainActivity with the "Always Hide" Logic
+          # 2. Overwrite with the Immersive Logic
           cat <<EOF > "$FILE"
           $PKG_NAME
 
           import android.os.Bundle;
           import android.view.View;
-          import android.view.Window;
-          import android.view.WindowManager;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
@@ -91,9 +91,9 @@ jobs:
           }
           EOF
 
-          # 3. Force the Android Theme to be Fullscreen
-          STYLE_FILE=$(find android -name styles.xml | head -n1)
-          if [ -f "$STYLE_FILE" ]; then
+          # 3. Find and Force styles.xml to be Fullscreen
+          STYLE_FILE=$(find . -name styles.xml | grep "values/styles.xml" | head -n1)
+          if [ -n "$STYLE_FILE" ]; then
             cat <<EOF > "$STYLE_FILE"
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
@@ -109,10 +109,11 @@ jobs:
           EOF
           fi
 
-          # 4. Strip the Capacitor StatusBar plugin from the config just in case
-          sed -i '/StatusBar:/,+4d' capacitor.config.ts
-        working-directory: artifacts/uno-buddy
-    
+          # 4. Kill the StatusBar plugin in the config so it stops fighting us
+          if [ -f "capacitor.config.ts" ]; then
+            sed -i '/StatusBar:/,+4d' capacitor.config.ts
+          fi
+  
 
       - name: Build Android APK
         run: |
