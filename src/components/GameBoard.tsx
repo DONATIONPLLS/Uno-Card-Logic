@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+// src/components/GameBoard.tsx
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   chooseBotMove,
@@ -20,116 +21,6 @@ import { RulesPanel } from "@/components/RulesPanel";
 import { Avatar, type AvatarTone } from "@/components/Avatar";
 import { sfx } from "@/lib/sounds";
 import { haptics } from "@/lib/haptics";
-
-// ── Staggered draw (NEW) ──
-const isDrawingRef        = useRef(false);
-const drawIntervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-const botTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
-// ──────────────────────────
-
-// Helper: start the staggered draw animation
-const startDrawAnimation = useCallback(
-  (playerIdx: number, numCards: number) => {
-    if (isDrawingRef.current) return;        // already animating
-    isDrawingRef.current = true;
-
-    // Prevent bot from jumping in during the animation
-    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
-
-    let index = 0;
-    drawIntervalRef.current = setInterval(() => {
-      if (index >= numCards) {
-        clearInterval(drawIntervalRef.current!);
-        // All flights launched – the actual draw will be applied
-        // after the last flight finishes (handled in the flight removal)
-        return;
-      }
-
-      const src = drawPileRef.current;
-      if (!src) return;
-      const sRect = src.getBoundingClientRect();
-
-      // end position: viewer's hand or opponent's seat
-      let endX: number, endY: number;
-      if (playerIdx === handViewIdx && handZoneRef.current) {
-        const hz = handZoneRef.current.getBoundingClientRect();
-        endX = hz.right - 40;
-        endY = hz.top + hz.height / 2;
-      } else {
-        const seat = seatRefs.current[playerIdx];
-        if (!seat) return;
-        const seatRect = seat.getBoundingClientRect();
-        endX = seatRect.left + seatRect.width / 2;
-        endY = seatRect.top + seatRect.height / 2;
-      }
-
-      const flightId = `draw-${playerIdx}-${Date.now()}-${index}`;
-      const placeholderCard: UnoCard = {
-        id: flightId,
-        color: 'wild',
-        value: 'wild',
-      };
-
-      const flight: Flight = {
-        id: flightId,
-        card: placeholderCard,
-        start: {
-          x: sRect.left + sRect.width / 2,
-          y: sRect.top + sRect.height / 2,
-        },
-        end: { x: endX, y: endY },
-        faceDown: true,               // drawn cards are shown face‑down during flight
-      };
-
-      setFlights((prev) => [...prev, flight]);
-
-      // Remove this flight after its fly time
-      setTimeout(() => {
-        setFlights((prev) => prev.filter((f) => f.id !== flightId));
-
-        // If this was the last card, apply the real draw
-        index++;
-        if (index === numCards) {
-          // Wait one more tick to let the last flight finish
-          setTimeout(() => {
-            // Apply the actual draw to the game
-            setGame((g) => {
-              const s = drawCards(cloneState(g), playerIdx, numCards);
-              // drawCards only adds cards; we also need to clear pendingDraw and log
-              // drawOne already does this, so we can call it instead after all cards are added
-              // We'll use drawOne which handles a single draw, but here we want to draw many.
-              // Instead we can replicate drawOne's logic.
-              const actualDraw = drawOne(g, playerIdx); // draws max(1, g.pendingDraw)
-              // drawOne draws the whole pending amount, which matches numCards.
-              return actualDraw;
-            });
-            isDrawingRef.current = false;
-          }, 50);
-        }
-      }, 520);          // flight duration
-
-      index++;
-    }, 500);            // 500ms stagger
-  },
-  [handViewIdx, setFlights, setGame, drawPileRef, handZoneRef, seatRefs]
-);
-
-const processBotTurn = useCallback(() => {
-  const g = gameRef.current;
-  if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
-  if (g.players[g.currentPlayer]?.kind !== 'bot') return;
-
-  const move = chooseBotMove(g, g.currentPlayer);
-
-  if (move.type === 'draw') {
-    const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
-    startDrawAnimation(g.currentPlayer, toDraw);
-  } else if (move.type === 'play') {
-    setGame((prev) =>
-      playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor)
-    );
-  }
-}, [startDrawAnimation, setGame]);
 
 const colorSwatch: Record<UnoColor, string> = {
   red: "bg-[hsl(0_85%_50%)]",
@@ -221,6 +112,101 @@ export function GameBoard({
   const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
   const prevGameRef = useRef<GameState>(game);
   const prevDrawLenRef = useRef<number>(game.drawPile.length);
+  const gameRef = useRef<GameState | null>(game);
+  gameRef.current = game;
+
+  // ── Staggered draw refs ──
+  const isDrawingRef = useRef(false);
+  const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Helper: start the staggered draw animation
+  const startDrawAnimation = useCallback(
+    (playerIdx: number, numCards: number) => {
+      if (isDrawingRef.current) return;
+      isDrawingRef.current = true;
+
+      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+
+      let index = 0;
+      drawIntervalRef.current = setInterval(() => {
+        if (index >= numCards) {
+          clearInterval(drawIntervalRef.current!);
+          return;
+        }
+
+        const src = drawPileRef.current;
+        if (!src) return;
+        const sRect = src.getBoundingClientRect();
+
+        let endX: number, endY: number;
+        if (playerIdx === handViewIdx && handZoneRef.current) {
+          const hz = handZoneRef.current.getBoundingClientRect();
+          endX = hz.right - 40;
+          endY = hz.top + hz.height / 2;
+        } else {
+          const seat = seatRefs.current[playerIdx];
+          if (!seat) return;
+          const seatRect = seat.getBoundingClientRect();
+          endX = seatRect.left + seatRect.width / 2;
+          endY = seatRect.top + seatRect.height / 2;
+        }
+
+        const flightId = `draw-${playerIdx}-${Date.now()}-${index}`;
+        const placeholderCard: UnoCard = {
+          id: flightId,
+          color: "wild",
+          value: "wild",
+        };
+
+        const flight: Flight = {
+          id: flightId,
+          card: placeholderCard,
+          start: {
+            x: sRect.left + sRect.width / 2,
+            y: sRect.top + sRect.height / 2,
+          },
+          end: { x: endX, y: endY },
+          faceDown: true,
+        };
+
+        setFlights((prev) => [...prev, flight]);
+
+        setTimeout(() => {
+          setFlights((prev) => prev.filter((f) => f.id !== flightId));
+          if (index === numCards - 1) {
+            // Last flight finished → apply the actual draw
+            setTimeout(() => {
+              setGame((g) => drawOne(g, playerIdx));
+              isDrawingRef.current = false;
+            }, 50);
+          }
+        }, 520);
+
+        index++;
+      }, 500);
+    },
+    [handViewIdx, setFlights, setGame]
+  );
+
+  const processBotTurn = useCallback(() => {
+    const g = gameRef.current;
+    if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
+    if (g.players[g.currentPlayer]?.kind !== "bot") return;
+
+    const move = chooseBotMove(g, g.currentPlayer);
+
+    if (move.type === "draw") {
+      const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
+      startDrawAnimation(g.currentPlayer, toDraw);
+    } else if (move.type === "play") {
+      setGame((prev) =>
+        playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor)
+      );
+    }
+  }, [startDrawAnimation, setGame]);
+
+  // ── Existing logic below (same as before except bot loop replaced) ──
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
@@ -243,7 +229,7 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-  // ── Card flight animations ──
+  // ── Card flight animations (play only, draws handled by staggered) ──
   useEffect(() => {
     const prev = prevGameRef.current;
     prevGameRef.current = game;
@@ -295,33 +281,9 @@ export function GameBoard({
           faceDown: false,
         });
         newTopSuppress = playedCard.id;
-      } else if (delta > 0 && delta <= 4) {
-        const src = drawPileRef.current;
-        if (!src) return;
-        const s = src.getBoundingClientRect();
-        let endX: number;
-        let endY: number;
-        if (i === handViewIdx && handZoneRef.current) {
-          const hz = handZoneRef.current.getBoundingClientRect();
-          endX = hz.right - 40;
-          endY = hz.top + hz.height / 2;
-        } else if (seat) {
-          const d = seat.getBoundingClientRect();
-          endX = d.left + d.width / 2;
-          endY = d.top + d.height / 2;
-        } else {
-          return;
-        }
-        for (let k = 0; k < delta; k++) {
-          newFlights.push({
-            id: `draw-${i}-${now}-${k}`,
-            card: { id: `fly-${now}-${k}`, color: "wild", value: "wild" } as UnoCard,
-            start: { x: s.left + s.width / 2, y: s.top + s.height / 2 },
-            end: { x: endX, y: endY },
-            faceDown: true,
-          });
-        }
       }
+      // Draw flights are now completely handled by startDrawAnimation,
+      // so we skip the delta > 0 branch here.
     });
 
     if (newFlights.length === 0) return;
@@ -363,7 +325,6 @@ export function GameBoard({
       case "wild":   msg = "WILD!";                  break;
       case "0":  if (game.houseRules.sevenZero) msg = "ALL PASS!"; break;
       case "7":  if (game.houseRules.sevenZero) msg = "SWAP!";     break;
-      // Flip mode: show text announcement only — NO screen rotation
       case "flip": msg = "FLIP!"; heavy = true; break;
     }
     if (msg) {
@@ -413,28 +374,44 @@ export function GameBoard({
   useEffect(() => {
     if (isPassAndPlay) return;
     if (myTurn && !viewerIsBot) { sfx.yourTurn(); haptics.medium(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myTurn, isPassAndPlay, viewerIsBot]);
 
-// Clean‑up staggered draw on unmount
-useEffect(() => {
-  return () => {
-    if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
-  };
-}, []);
+  // ── Bot swap handling ──
+  useEffect(() => {
+    if (!enableBots) return;
+    if (game.pendingAction?.type === "swap7") {
+      const fromKind = game.players[game.pendingAction.from].kind;
+      if (fromKind === "bot") {
+        const t = setTimeout(() => {
+          setGame((g) => {
+            if (g.pendingAction?.type !== "swap7") return g;
+            return resolveSwap(g, chooseBotSwapTarget(g));
+          });
+        }, 1100 + Math.random() * 600);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [game.pendingAction, game.players, enableBots, setGame]);
 
- // ── Bot loop (NEW: uses staggered draw) ──
-useEffect(() => {
-  if (!enableBots || game.winner || isDrawingRef.current) return;
-  const current = game.players[game.currentPlayer];
-  if (!current || current.kind !== 'bot') return;
+  // Clean-up staggered draw on unmount
+  useEffect(() => {
+    return () => {
+      if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
+    };
+  }, []);
 
-  const delay = 1200 + Math.random() * 800;
-  botTimeoutRef.current = setTimeout(processBotTurn, delay);
-  return () => {
-    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
-  };
-}, [game.currentPlayer, game.winner, enableBots, processBotTurn]);
+  // ── Bot loop (NEW: uses staggered draw) ──
+  useEffect(() => {
+    if (!enableBots || game.winner || isDrawingRef.current) return;
+    const current = game.players[game.currentPlayer];
+    if (!current || current.kind !== "bot") return;
+
+    const delay = 1200 + Math.random() * 800;
+    botTimeoutRef.current = setTimeout(processBotTurn, delay);
+    return () => {
+      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+    };
+  }, [game.currentPlayer, game.winner, enableBots, processBotTurn]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -498,30 +475,28 @@ useEffect(() => {
     setSelectedId(null);
   };
 
-// Inside onDrawPileTap, replace the draw call with:
-const onDrawPileTap = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-  if (isDrawingRef.current) return;   // already drawing
+  const onDrawPileTap = () => {
+    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+    if (isDrawingRef.current) return;
 
-  if (selectedId) {
-    setSelectedId(null);
-    return;
-  }
-  if (hasDrawnThisTurn) return;
+    if (selectedId) {
+      setSelectedId(null);
+      return;
+    }
+    if (hasDrawnThisTurn) return;
 
-  if (!drawArmed) {
-    sfx.click();
-    haptics.light();
-    setDrawArmed(true);
-    return;
-  }
+    if (!drawArmed) {
+      sfx.click();
+      haptics.light();
+      setDrawArmed(true);
+      return;
+    }
 
-  // Second tap – start animation
-  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-  startDrawAnimation(handViewIdx, cardsToDraw);
-  setDrawArmed(false);
-  setHasDrawnThisTurn(true);   // prevent drawing again this turn
-};
+    const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+    startDrawAnimation(handViewIdx, cardsToDraw);
+    setDrawArmed(false);
+    setHasDrawnThisTurn(true);
+  };
 
   const onPass = () => {
     if (!myTurn || !revealed) return;
@@ -550,7 +525,7 @@ const onDrawPileTap = () => {
 
   const myHand = game.hands[handViewIdx] ?? [];
   const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
-   const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null && !isDrawingRef.current;
+  const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null && !isDrawingRef.current;
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
@@ -564,13 +539,6 @@ const onDrawPileTap = () => {
   }));
   const seatAt = (pos: SeatPos) => seated.find((s) => s.pos === pos);
 
-  /*
-   * FLIP MODE FIX:
-   * The previous code animated `rotateY: 180` on the outer container which
-   * physically flipped the entire screen (players had to tilt their phones).
-   * Now: only the table background colour changes to signal the dark side.
-   * Cards already show the correct face — no rotation needed.
-   */
   const tableBg = flipMode
     ? game.gameSide === "dark"
       ? "radial-gradient(ellipse at center, #0f0f14 0%, #06060a 55%, #000 100%)"
@@ -585,16 +553,11 @@ const onDrawPileTap = () => {
   };
 
   return (
-    /*
-     * Plain <div> — no rotateY transform, no framer-motion on the shell.
-     * The background fills the full screen; the header gets safe-area padding.
-     */
     <div
       className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
       style={{ background: tableBg }}
     >
-      {/* Header — safe-area-aware so content clears the status bar */}
-            <header
+      <header
         className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-[#0a0a0c] z-10 gap-2"
         style={{ paddingTop: "max(env(safe-area-inset-top), 0.5rem)" }}
       >
@@ -650,7 +613,7 @@ const onDrawPileTap = () => {
               hand={game.hands[seatAt("top")!.idx]}
               player={game.players[seatAt("top")!.idx]}
               idx={seatAt("top")!.idx}
-                            tone={toneFor(seatAt("top")!.idx)}
+              tone={toneFor(seatAt("top")!.idx)}
               flipMode={flipMode}
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
@@ -686,7 +649,6 @@ const onDrawPileTap = () => {
           ) : null}
         </div>
 
-        {/* Centre: draw pile + discard pile */}
         <div
           className="row-start-2 col-start-2 flex items-center justify-center gap-4"
           onClick={() => { setSelectedId(null); setDrawArmed(false); }}
@@ -732,7 +694,6 @@ const onDrawPileTap = () => {
           </div>
         </div>
 
-        {/* Announcement overlay */}
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div
@@ -752,14 +713,12 @@ const onDrawPileTap = () => {
         ) : null}
       </div>
 
-      {/* Log */}
       <div className="mx-3 mb-2 max-h-14 overflow-y-auto rounded-md bg-black/40 border border-white/10 px-3 py-1.5 text-[11px] text-white/80 space-y-0.5 z-10">
         {game.log.slice(0, 4).map((line, i) => (
           <div key={i}>{line}</div>
         ))}
       </div>
 
-      {/* Player hand */}
       <div className="border-t border-white/10 pt-2 pb-3 bg-[#0f0f13] z-10">
         <div className="flex items-center justify-between mb-2 px-3 gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -858,7 +817,6 @@ const onDrawPileTap = () => {
         ) : null}
       </div>
 
-      {/* Flight overlay */}
       <div className="fixed inset-0 pointer-events-none z-40">
         {flights.map((f) => (
           <motion.div
@@ -934,9 +892,8 @@ const onDrawPileTap = () => {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Sub-components (unchanged)
 // ---------------------------------------------------------------------------
-
 const tableGridStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(60px, 1fr) 3fr minmax(60px, 1fr)",
   gridTemplateRows: "auto 1fr",
