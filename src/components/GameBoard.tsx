@@ -121,73 +121,73 @@ export function GameBoard({
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper: start the staggered draw animation
-  const startDrawAnimation = useCallback(
-    (playerIdx: number, numCards: number) => {
-      if (isDrawingRef.current) return;
-      isDrawingRef.current = true;
+const startDrawAnimation = useCallback(
+  (playerIdx: number, numCards: number) => {
+    if (isDrawingRef.current) return;
+    isDrawingRef.current = true;
 
-      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
 
-      let index = 0;
-      drawIntervalRef.current = setInterval(() => {
-        if (index >= numCards) {
-          clearInterval(drawIntervalRef.current!);
-          return;
+    let count = 0;
+
+    const launchOne = () => {
+      if (count >= numCards) return;
+
+      const currentIndex = count; // capture the index for this flight
+      const src = drawPileRef.current;
+      if (!src) return;
+
+      const sRect = src.getBoundingClientRect();
+
+      let endX: number, endY: number;
+      if (playerIdx === handViewIdx && handZoneRef.current) {
+        const hz = handZoneRef.current.getBoundingClientRect();
+        endX = hz.right - 40;
+        endY = hz.top + hz.height / 2;
+      } else {
+        const seat = seatRefs.current[playerIdx];
+        if (!seat) return;
+        const seatRect = seat.getBoundingClientRect();
+        endX = seatRect.left + seatRect.width / 2;
+        endY = seatRect.top + seatRect.height / 2;
+      }
+
+      const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
+      const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
+      const flight: Flight = {
+        id: flightId,
+        card: placeholderCard,
+        start: {
+          x: sRect.left + sRect.width / 2,
+          y: sRect.top + sRect.height / 2,
+        },
+        end: { x: endX, y: endY },
+        faceDown: true,
+      };
+
+      setFlights((prev) => [...prev, flight]);
+
+      setTimeout(() => {
+        setFlights((prev) => prev.filter((f) => f.id !== flightId));
+        if (currentIndex === numCards - 1) {
+          // Last flight finished → apply the real draw
+          setTimeout(() => {
+            setGame((g) => drawOne(g, playerIdx));
+            isDrawingRef.current = false;
+          }, 40);
         }
+      }, 520);
 
-        const src = drawPileRef.current;
-        if (!src) return;
-        const sRect = src.getBoundingClientRect();
+      count++;
+      if (count < numCards) {
+        setTimeout(launchOne, 500);
+      }
+    };
 
-        let endX: number, endY: number;
-        if (playerIdx === handViewIdx && handZoneRef.current) {
-          const hz = handZoneRef.current.getBoundingClientRect();
-          endX = hz.right - 40;
-          endY = hz.top + hz.height / 2;
-        } else {
-          const seat = seatRefs.current[playerIdx];
-          if (!seat) return;
-          const seatRect = seat.getBoundingClientRect();
-          endX = seatRect.left + seatRect.width / 2;
-          endY = seatRect.top + seatRect.height / 2;
-        }
-
-        const flightId = `draw-${playerIdx}-${Date.now()}-${index}`;
-        const placeholderCard: UnoCard = {
-          id: flightId,
-          color: "wild",
-          value: "wild",
-        };
-
-        const flight: Flight = {
-          id: flightId,
-          card: placeholderCard,
-          start: {
-            x: sRect.left + sRect.width / 2,
-            y: sRect.top + sRect.height / 2,
-          },
-          end: { x: endX, y: endY },
-          faceDown: true,
-        };
-
-        setFlights((prev) => [...prev, flight]);
-
-        setTimeout(() => {
-          setFlights((prev) => prev.filter((f) => f.id !== flightId));
-          if (index === numCards - 1) {
-            // Last flight finished → apply the actual draw
-            setTimeout(() => {
-              setGame((g) => drawOne(g, playerIdx));
-              isDrawingRef.current = false;
-            }, 50);
-          }
-        }, 520);
-
-        index++;
-      }, 500);
-    },
-    [handViewIdx, setFlights, setGame]
-  );
+    launchOne(); // start first flight immediately
+  },
+  [handViewIdx, setFlights, setGame]
+);
 
   const processBotTurn = useCallback(() => {
     const g = gameRef.current;
@@ -681,17 +681,16 @@ export function GameBoard({
             </span>
           </button>
 
-          <div className="flex flex-col items-center gap-1">
-            <motion.div
-              ref={discardRef}
-              key={visibleTop.id}
-              className="animate-[flyIn_.35s_ease-out]"
-              layoutId={`card-${visibleTop.id}`}
-            >
-              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
-            </motion.div>
-            <span className="text-[10px] text-white/60">Top</span>
-          </div>
+<div className="flex flex-col items-center gap-1">
+  <motion.div
+    ref={discardRef}
+    key={visibleTop.id}
+    className="animate-[flyIn_.35s_ease-out]"
+  >
+    <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
+  </motion.div>
+  <span className="text-[10px] text-white/60">Top</span>
+</div>
         </div>
 
         {announcement ? (
