@@ -35,16 +35,25 @@ jobs:
       - name: Build project
         run: pnpm build
         
-      - name: Sync Capacitor Android
+      - name: Sync & Repair Android Project
         run: |
           pnpm add -D -w @capacitor/cli @capacitor/android
-          pnpm exec cap sync android
           
-          # If the engine is missing, generate it professionally
-          if [ ! -f "android/gradlew" ]; then
-            cd android
-            gradle wrapper
-          fi
+          # 1. Backup your custom work (Brain)
+          mkdir -p .backup
+          cp android/app/src/main/java/com/unobuddy/app/MainActivity.java .backup/ || true
+          cp android/app/src/main/res/values/styles.xml .backup/ || true
+          
+          # 2. Re-create the missing project files (Skeleton)
+          rm -rf android
+          pnpm exec cap add android
+          
+          # 3. Restore your custom code over the new default files
+          cp .backup/MainActivity.java android/app/src/main/java/com/unobuddy/app/MainActivity.java || true
+          cp .backup/styles.xml android/app/src/main/res/values/styles.xml || true
+          
+          # 4. Final sync to prepare the build
+          pnpm exec cap sync android
 
       - name: Build Android APK
         run: |
