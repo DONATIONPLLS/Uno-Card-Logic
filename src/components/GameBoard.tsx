@@ -516,17 +516,30 @@ export function GameBoard({
     setSelectedId(null);
   };
 
-  const onDrawPileTap = () => {
-    if (!myTurn || !revealed || viewerIsBot) return;
-    if (game.pendingAction !== null) return;
-    if (selectedId) { setSelectedId(null); return; }
-    if (hasDrawnThisTurn) return;
-    if (!drawArmed) { sfx.click(); haptics.light(); setDrawArmed(true); return; }
-    sfx.draw(); haptics.light();
-    act.draw();
-    setHasDrawnThisTurn(true);
-    setDrawArmed(false);
-  };
+// Inside onDrawPileTap, replace the draw call with:
+const onDrawPileTap = () => {
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (isDrawingRef.current) return;   // already drawing
+
+  if (selectedId) {
+    setSelectedId(null);
+    return;
+  }
+  if (hasDrawnThisTurn) return;
+
+  if (!drawArmed) {
+    sfx.click();
+    haptics.light();
+    setDrawArmed(true);
+    return;
+  }
+
+  // Second tap – start animation
+  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+  startDrawAnimation(handViewIdx, cardsToDraw);
+  setDrawArmed(false);
+  setHasDrawnThisTurn(true);   // prevent drawing again this turn
+};
 
   const onPass = () => {
     if (!myTurn || !revealed) return;
