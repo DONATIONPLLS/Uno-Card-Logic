@@ -21,6 +21,99 @@ import { Avatar, type AvatarTone } from "@/components/Avatar";
 import { sfx } from "@/lib/sounds";
 import { haptics } from "@/lib/haptics";
 
+// Add these refs inside the GameBoard component
+
+const isDrawingRef = useRef(false);
+const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+// Helper: start the staggered draw animation
+const startDrawAnimation = useCallback(
+  (playerIdx: number, numCards: number) => {
+    if (isDrawingRef.current) return;        // already animating
+    isDrawingRef.current = true;
+
+    // Prevent bot from jumping in during the animation
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+
+    let index = 0;
+    drawIntervalRef.current = setInterval(() => {
+      if (index >= numCards) {
+        clearInterval(drawIntervalRef.current!);
+        // All flights launched – the actual draw will be applied
+        // after the last flight finishes (handled in the flight removal)
+        return;
+      }
+
+      const src = drawPileRef.current;
+      if (!src) return;
+      const sRect = src.getBoundingClientRect();
+
+      // end position: viewer's hand or opponent's seat
+      let endX: number, endY: number;
+      if (playerIdx === handViewIdx && handZoneRef.current) {
+        const hz = handZoneRef.current.getBoundingClientRect();
+        endX = hz.right - 40;
+        endY = hz.top + hz.height / 2;
+      } else {
+        const seat = seatRefs.current[playerIdx];
+        if (!seat) return;
+        const seatRect = seat.getBoundingClientRect();
+        endX = seatRect.left + seatRect.width / 2;
+        endY = seatRect.top + seatRect.height / 2;
+      }
+
+      const flightId = `draw-${playerIdx}-${Date.now()}-${index}`;
+      const placeholderCard: UnoCard = {
+        id: flightId,
+        color: 'wild',
+        value: 'wild',
+      };
+
+      const flight: Flight = {
+        id: flightId,
+        card: placeholderCard,
+        start: {
+          x: sRect.left + sRect.width / 2,
+          y: sRect.top + sRect.height / 2,
+        },
+        end: { x: endX, y: endY },
+        faceDown: true,               // drawn cards are shown face‑down during flight
+      };
+
+      setFlights((prev) => [...prev, flight]);
+
+      // Remove this flight after its fly time
+      setTimeout(() => {
+        setFlights((prev) => prev.filter((f) => f.id !== flightId));
+
+        // If this was the last card, apply the real draw
+        index++;
+        if (index === numCards) {
+          // Wait one more tick to let the last flight finish
+          setTimeout(() => {
+            // Apply the actual draw to the game
+            setGame((g) => {
+              const s = drawCards(cloneState(g), playerIdx, numCards);
+              // drawCards only adds cards; we also need to clear pendingDraw and log
+              // drawOne already does this, so we can call it instead after all cards are added
+              // We'll use drawOne which handles a single draw, but here we want to draw many.
+              // Instead we can replicate drawOne's logic.
+              const actualDraw = drawOne(g, playerIdx); // draws max(1, g.pendingDraw)
+              // drawOne draws the whole pending amount, which matches numCards.
+              return actualDraw;
+            });
+            isDrawingRef.current = false;
+          }, 50);
+        }
+      }, 520);          // flight duration
+
+      index++;
+    }, 500);            // 500ms stagger
+  },
+  [handViewIdx, setFlights, setGame, drawPileRef, handZoneRef, seatRefs]
+);
+
 const colorSwatch: Record<UnoColor, string> = {
   red: "bg-[hsl(0_85%_50%)]",
   yellow: "bg-[hsl(48_100%_50%)]",
