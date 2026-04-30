@@ -347,10 +347,8 @@ export function playCard(
     );
     return s;
   }
-
   s.currentPlayer = nextPlayer(s, skipNext);
-  
-  // The victim must draw (or stack) manually – the UI will animate the draw.
+}
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
   if (state.pendingAction?.type !== "swap7") return state;
