@@ -17,22 +17,24 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         
         Window window = getWindow();
-        
-        // 1. Tell Android we are handling the background ourselves
-        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        
-        // 2. Make them transparent
-        window.setStatusBarColor(Color.TRANSPARENT);
-        window.setNavigationBarColor(Color.TRANSPARENT);
 
-        // 3. KILL THE TINT (The "Subway Surfers" fix)
-        // This stops Android from forcing that semi-transparent grey/black box
+        // 1. Force the window to draw its own backgrounds
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+
+        // 2. THE TRICK: Use a nearly-invisible color instead of "Transparent"
+        // This is #01000000 (1/255 opacity)
+        int fakeTransparent = Color.argb(1, 0, 0, 0); 
+        window.setStatusBarColor(fakeTransparent);
+        window.setNavigationBarColor(fakeTransparent);
+
+        // 3. Disable the contrast enforcement
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.setStatusBarContrastEnforced(false);
             window.setNavigationBarContrastEnforced(false);
         }
 
-        // 4. Set Edge-to-Edge
+        // 4. Modern Edge-to-Edge
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false);
         }
@@ -51,6 +53,7 @@ public class MainActivity extends BridgeActivity {
             WindowInsetsController controller = getWindow().getInsetsController();
             if (controller != null) {
                 controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                // Transient behavior is what causes the "scrim" on swipe
                 controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
         } else {
