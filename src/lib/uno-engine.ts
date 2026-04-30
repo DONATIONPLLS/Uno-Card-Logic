@@ -349,17 +349,8 @@ export function playCard(
   }
 
   s.currentPlayer = nextPlayer(s, skipNext);
-
-  if (s.pendingDraw > 0 && !canStack(s)) {
-    const target = s.currentPlayer;
-    s = drawCards(s, target, s.pendingDraw);
-    s.log.unshift(`${nameOf(s.players[target])} drew ${s.pendingDraw} cards.`);
-    s.pendingDraw = 0;
-    s.currentPlayer = nextPlayer(s);
-  }
-
-  return s;
-}
+  
+  // The victim must draw (or stack) manually – the UI will animate the draw.
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
   if (state.pendingAction?.type !== "swap7") return state;
