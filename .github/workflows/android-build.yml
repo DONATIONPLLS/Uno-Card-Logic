@@ -38,12 +38,21 @@ jobs:
       - name: Sync Capacitor Android
         run: |
           pnpm add -D -w @capacitor/cli @capacitor/android
-          pnpm exec cap sync android
+          # If the android folder exists but gradlew is missing, 
+          # run 'cap sync' to restore build files without overwriting your Java code.
+          if [ -d "android" ] && [ ! -f "android/gradlew" ]; then
+            pnpm exec cap sync android
+          elif [ ! -d "android" ]; then
+            pnpm exec cap add android
+          fi
 
       - name: Build Android APK
         run: |
           cd android
+          # This gives the runner permission to execute the build script
+          chmod +x gradlew
           ./gradlew assembleDebug
+
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
