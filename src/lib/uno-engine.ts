@@ -348,6 +348,7 @@ export function playCard(
     return s;
   }
   s.currentPlayer = nextPlayer(s, skipNext);
+    return s;
 }
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
@@ -365,14 +366,6 @@ export function resolveSwap(state: GameState, targetIdx: number): GameState {
   return s;
 }
 
-function canStack(state: GameState): boolean {
-  if (!state.houseRules.stackDraws) return false;
-  const top = state.discardPile[state.discardPile.length - 1];
-  const hand = state.hands[state.currentPlayer];
-  return hand.some((c) =>
-    isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules),
-  );
-}
 
 export function hasPlayableCard(state: GameState, playerIdx: number): boolean {
   const top = state.discardPile[state.discardPile.length - 1];
