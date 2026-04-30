@@ -45,7 +45,74 @@ jobs:
             rm -rf android
             pnpm exec cap add android
           fi
-          pnpm exec cap sync android    
+          pnpm exec cap sync android
+
+      - name: Force True Immersive Mode & App Polish
+        run: |
+          # 1. Find the MainActivity.java file
+          FILE=$(find android -name MainActivity.java | head -n1)
+          PKG_NAME=$(grep "^package " "$FILE")
+          
+          # 2. Overwrite MainActivity with the "Always Hide" Logic
+          cat <<EOF > "$FILE"
+          $PKG_NAME
+
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowManager;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  hideSystemUI();
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) {
+                      hideSystemUI();
+                  }
+              }
+
+              private void hideSystemUI() {
+                  getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                      | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                      | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                      | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                      | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                      | View.SYSTEM_UI_FLAG_FULLSCREEN
+                  );
+              }
+          }
+          EOF
+
+          # 3. Force the Android Theme to be Fullscreen
+          STYLE_FILE=$(find android -name styles.xml | head -n1)
+          if [ -f "$STYLE_FILE" ]; then
+            cat <<EOF > "$STYLE_FILE"
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+                  <item name="android:windowNoTitle">true</item>
+                  <item name="android:windowActionBar">false</item>
+                  <item name="android:windowFullscreen">true</item>
+                  <item name="android:windowContentOverlay">@null</item>
+              </style>
+              <style name="AppTheme.NoActionBar" parent="AppTheme">
+              </style>
+          </resources>
+          EOF
+          fi
+
+          # 4. Strip the Capacitor StatusBar plugin from the config just in case
+          sed -i '/StatusBar:/,+4d' capacitor.config.ts
+        working-directory: artifacts/uno-buddy
+    
 
       - name: Build Android APK
         run: |
