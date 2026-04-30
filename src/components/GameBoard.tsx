@@ -21,11 +21,11 @@ import { Avatar, type AvatarTone } from "@/components/Avatar";
 import { sfx } from "@/lib/sounds";
 import { haptics } from "@/lib/haptics";
 
-// Add these refs inside the GameBoard component
-
-const isDrawingRef = useRef(false);
-const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+// ── Staggered draw (NEW) ──
+const isDrawingRef        = useRef(false);
+const drawIntervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+const botTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+// ──────────────────────────
 
 // Helper: start the staggered draw animation
 const startDrawAnimation = useCallback(
@@ -113,6 +113,23 @@ const startDrawAnimation = useCallback(
   },
   [handViewIdx, setFlights, setGame, drawPileRef, handZoneRef, seatRefs]
 );
+
+const processBotTurn = useCallback(() => {
+  const g = gameRef.current;
+  if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
+  if (g.players[g.currentPlayer]?.kind !== 'bot') return;
+
+  const move = chooseBotMove(g, g.currentPlayer);
+
+  if (move.type === 'draw') {
+    const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
+    startDrawAnimation(g.currentPlayer, toDraw);
+  } else if (move.type === 'play') {
+    setGame((prev) =>
+      playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor)
+    );
+  }
+}, [startDrawAnimation, setGame]);
 
 const colorSwatch: Record<UnoColor, string> = {
   red: "bg-[hsl(0_85%_50%)]",
@@ -399,60 +416,25 @@ export function GameBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myTurn, isPassAndPlay, viewerIsBot]);
 
-  // ── Bot loop ──
-  useEffect(() => {
-    if (!enableBots) return;
-    if (game.winner !== null) return;
-    if (game.pendingAction?.type === "swap7") {
-      const fromKind = game.players[game.pendingAction.from].kind;
-      if (fromKind === "bot") {
-        const t = setTimeout(() => {
-          setGame((g) => {
-            if (g.pendingAction?.type !== "swap7") return g;
-            return resolveSwap(g, chooseBotSwapTarget(g));
-          });
-        }, 1100 + Math.random() * 600);
-        return () => clearTimeout(t);
-      }
-      return;
-    }
-    if (currentPlayer?.kind !== "bot") return;
-    const delay = 1200 + Math.random() * 800;
-    const t = setTimeout(() => {
-      setGame((g) => {
-        if (g.winner !== null || g.pendingAction !== null) return g;
-        const idx = g.currentPlayer;
-        if (g.players[idx].kind !== "bot") return g;
-        const move = chooseBotMove(g, idx);
-        if (move.type === "play") {
-          sfx.swish();
-          return playCard(g, idx, move.cardId, move.chosenColor);
-        }
-        sfx.draw();
-        const afterDraw = drawOne(g, idx);
-        if (afterDraw === g) return g;
-        const newCard = afterDraw.hands[idx][afterDraw.hands[idx].length - 1];
-        if (
-          newCard &&
-          isValidMove(
-            newCard,
-            afterDraw.discardPile[afterDraw.discardPile.length - 1],
-            afterDraw.activeColor,
-            afterDraw.pendingDraw,
-            afterDraw.houseRules,
-          )
-        ) {
-          const followUp = chooseBotMove(afterDraw, idx);
-          if (followUp.type === "play") {
-            setTimeout(() => sfx.swish(), 400);
-            return playCard(afterDraw, idx, followUp.cardId, followUp.chosenColor);
-          }
-        }
-        return endTurn(afterDraw, idx);
-      });
-    }, delay);
-    return () => clearTimeout(t);
-  }, [game.currentPlayer, game.winner, game.pendingAction, currentPlayer, setGame, enableBots]);
+// Clean‑up staggered draw on unmount
+useEffect(() => {
+  return () => {
+    if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
+  };
+}, []);
+
+ // ── Bot loop (NEW: uses staggered draw) ──
+useEffect(() => {
+  if (!enableBots || game.winner || isDrawingRef.current) return;
+  const current = game.players[game.currentPlayer];
+  if (!current || current.kind !== 'bot') return;
+
+  const delay = 1200 + Math.random() * 800;
+  botTimeoutRef.current = setTimeout(processBotTurn, delay);
+  return () => {
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+  };
+}, [game.currentPlayer, game.winner, enableBots, processBotTurn]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -568,8 +550,7 @@ const onDrawPileTap = () => {
 
   const myHand = game.hands[handViewIdx] ?? [];
   const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
-  const canPass =
-    myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null;
+   const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null && !isDrawingRef.current;
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
