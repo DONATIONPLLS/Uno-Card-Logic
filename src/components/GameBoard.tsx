@@ -122,7 +122,7 @@ export function GameBoard({
 
   // Helper: start the staggered draw animation
 const startDrawAnimation = useCallback(
-  (playerIdx: number, numCards: number) => {
+  (playerIdx: number, numCards: number, onComplete?: () => void) => {
     if (isDrawingRef.current) return;
     isDrawingRef.current = true;
 
@@ -133,7 +133,7 @@ const startDrawAnimation = useCallback(
     const launchOne = () => {
       if (count >= numCards) return;
 
-      const currentIndex = count; // capture the index for this flight
+      const currentIndex = count;
       const src = drawPileRef.current;
       if (!src) return;
 
@@ -153,7 +153,12 @@ const startDrawAnimation = useCallback(
       }
 
       const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
-      const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
+      const placeholderCard: UnoCard = {
+        id: flightId,
+        color: "wild",
+        value: "wild",
+      };
+
       const flight: Flight = {
         id: flightId,
         card: placeholderCard,
@@ -172,7 +177,12 @@ const startDrawAnimation = useCallback(
         if (currentIndex === numCards - 1) {
           // Last flight finished → apply the real draw
           setTimeout(() => {
-            setGame((g) => drawOne(g, playerIdx));
+            setGame((g) => {
+              const newState = drawOne(g, playerIdx);
+              // Allow bot to continue after state settles
+              setTimeout(() => onComplete?.(), 10);
+              return newState;
+            });
             isDrawingRef.current = false;
           }, 40);
         }
@@ -180,31 +190,62 @@ const startDrawAnimation = useCallback(
 
       count++;
       if (count < numCards) {
-        setTimeout(launchOne, 500);
+        setTimeout(launchOne, 125);   // ← 125 ms between cards
       }
     };
 
-    launchOne(); // start first flight immediately
+    launchOne();
   },
   [handViewIdx, setFlights, setGame]
 );
 
-  const processBotTurn = useCallback(() => {
-    const g = gameRef.current;
-    if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
-    if (g.players[g.currentPlayer]?.kind !== "bot") return;
+const processBotTurn = useCallback(() => {
+  const g = gameRef.current;
+  if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
+  if (g.players[g.currentPlayer]?.kind !== "bot") return;
 
-    const move = chooseBotMove(g, g.currentPlayer);
+  const move = chooseBotMove(g, g.currentPlayer);
 
-    if (move.type === "draw") {
-      const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
-      startDrawAnimation(g.currentPlayer, toDraw);
-    } else if (move.type === "play") {
-      setGame((prev) =>
-        playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor)
-      );
-    }
-  }, [startDrawAnimation, setGame]);
+  if (move.type === "draw") {
+    const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
+    startDrawAnimation(g.currentPlayer, toDraw, () => {
+      // After drawing, check if the drawn card is playable and play it, otherwise end turn
+      setGame((prev) => {
+        const hand = prev.hands[prev.currentPlayer];
+        const lastCard = hand[hand.length - 1];
+        if (
+          lastCard &&
+          isValidMove(
+            lastCard,
+            prev.discardPile[prev.discardPile.length - 1],
+            prev.activeColor,
+            prev.pendingDraw,
+            prev.houseRules,
+          )
+        ) {
+          // If wild, pick a color (simple heuristic: most frequent color in hand)
+          if (lastCard.color === "wild") {
+            const colorCounts: Record<string, number> = {};
+            hand.forEach((c) => {
+              if (c.color !== "wild") colorCounts[c.color] = (colorCounts[c.color] || 0) + 1;
+            });
+            const bestColor = Object.keys(colorCounts).reduce((a, b) =>
+              colorCounts[a] > colorCounts[b] ? a : b,
+              "red",
+            );
+            return playCard(prev, prev.currentPlayer, lastCard.id, bestColor as UnoColor);
+          }
+          return playCard(prev, prev.currentPlayer, lastCard.id);
+        }
+        return endTurn(prev, prev.currentPlayer);
+      });
+    });
+  } else if (move.type === "play") {
+    setGame((prev) =>
+      playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor),
+    );
+  }
+}, [startDrawAnimation, setGame]);
 
   // ── Existing logic below (same as before except bot loop replaced) ──
 
@@ -685,7 +726,6 @@ const startDrawAnimation = useCallback(
   <motion.div
     ref={discardRef}
     key={visibleTop.id}
-    className="animate-[flyIn_.35s_ease-out]"
   >
     <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
   </motion.div>
