@@ -86,6 +86,8 @@ export function GameBoard({
   const isPassAndPlay = passAndPlay ?? viewerIdx === undefined;
   const handViewIdx = viewerIdx ?? game.currentPlayer;
   const flipMode = game.mode === "flip";
+  
+  const pendingPlayFlight = useRef(false);   // true while a play animation is still flying
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickColorFor, setPickColorFor] = useState<string | null>(null);
@@ -321,15 +323,17 @@ const processBotTurn = useCallback(() => {
       // so we skip the delta > 0 branch here.
     });
 
-    if (newFlights.length === 0) return;
-    setFlights((prevFs) => [...prevFs, ...newFlights]);
-    if (newTopSuppress) setSuppressedTopId(newTopSuppress);
-    const ids = newFlights.map((f) => f.id);
-    const t = setTimeout(() => {
-      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
-      if (newTopSuppress) setSuppressedTopId(null);
-    }, 520);
-    return () => clearTimeout(t);
+if (newFlights.length === 0) return;
+setFlights((prevFs) => [...prevFs, ...newFlights]);
+if (newTopSuppress) setSuppressedTopId(newTopSuppress);
+pendingPlayFlight.current = true;                          // ← ADD
+const ids = newFlights.map((f) => f.id);
+const t = setTimeout(() => {
+  setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
+  if (newTopSuppress) setSuppressedTopId(null);
+  pendingPlayFlight.current = false;                       // ← ADD
+}, 520);
+return () => clearTimeout(t);
   }, [game, handViewIdx]);
 
   // ── Win detection ──
@@ -439,16 +443,16 @@ if (isDrawingRef.current) return;  // ← ADD THIS
 
   // ── Bot loop (NEW: uses staggered draw) ──
   useEffect(() => {
-    if (!enableBots || game.winner || isDrawingRef.current) return;
-    const current = game.players[game.currentPlayer];
-    if (!current || current.kind !== "bot") return;
+  if (!enableBots || game.winner || isDrawingRef.current || pendingPlayFlight.current) return;
+  const current = game.players[game.currentPlayer];
+  if (!current || current.kind !== "bot") return;
 
-    const delay = 1200 + Math.random() * 800;
-    botTimeoutRef.current = setTimeout(processBotTurn, delay);
-    return () => {
-      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
-    };
-  }, [game.currentPlayer, game.winner, enableBots, processBotTurn]);
+  const delay = 1200 + Math.random() * 800;
+  botTimeoutRef.current = setTimeout(processBotTurn, delay);
+  return () => {
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+  };
+}, [game.currentPlayer, game.winner, enableBots, pendingPlayFlight.current, processBotTurn]);
 
   useEffect(() => {
     if (!selectedId) return;
