@@ -374,6 +374,37 @@ export function drawOne(state: GameState, playerIdx: number): GameState {
   return s;
 }
 
+/**
+ * Draw a single card for the player. If pendingDraw > 0, it decrements that
+ * count by 1; otherwise it simply draws one card (used for incremental animations).
+ */
+export function drawSingle(state: GameState, playerIdx: number): GameState {
+  const s = cloneState(state);
+  if (s.winner !== null || s.pendingAction !== null) return s;
+  if (playerIdx !== s.currentPlayer) return s;
+
+  // Reshuffle if needed
+  if (s.drawPile.length === 0) {
+    const top = s.discardPile.pop()!;
+    const reshuffled = shuffle(
+      s.discardPile.map((c) =>
+        c.value === "wild" || c.value === "wild4" ? { ...c, color: "wild" as WildColor } : c,
+      ),
+    );
+    s.drawPile = reshuffled;
+    s.discardPile = [top];
+    if (s.drawPile.length === 0) return s;
+  }
+
+  const card = s.drawPile.shift()!;
+  s.hands[playerIdx].push(card);
+
+  // Decrement the pending draw counter
+  s.pendingDraw = Math.max(0, (s.pendingDraw ?? 0) - 1);
+
+  return s;
+}
+
 export function endTurn(state: GameState, playerIdx: number): GameState {
   if (state.winner !== null || state.pendingAction !== null) return state;
   if (playerIdx !== state.currentPlayer) return state;
