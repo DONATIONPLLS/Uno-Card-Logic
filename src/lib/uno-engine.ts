@@ -74,80 +74,46 @@ export function cardPointValue(c: UnoCard): number {
   return parseInt(c.value, 10) || 0;
 }
 
-// ---------- Uno Flip mapping (official deck) ----------
-// Each light card has a fixed dark counterpart.
-const LIGHT_TO_DARK: Record<string, { color: WildColor; value: CardValue }> = {
-  // Red numbers
-  "red-1":   { color: "blue",   value: "5" },
-  "red-2":   { color: "blue",   value: "4" },
-  "red-3":   { color: "blue",   value: "3" },
-  "red-4":   { color: "blue",   value: "2" },
-  "red-5":   { color: "blue",   value: "1" },
-  "red-6":   { color: "yellow", value: "8" },
-  "red-7":   { color: "yellow", value: "7" },
-  "red-8":   { color: "yellow", value: "6" },
-  "red-9":   { color: "green",  value: "4" },
-
-  // Yellow numbers
-  "yellow-1": { color: "green", value: "4" },
-  "yellow-2": { color: "green", value: "3" },
-  "yellow-3": { color: "green", value: "2" },
-  "yellow-4": { color: "green", value: "1" },
-  "yellow-5": { color: "red",   value: "8" },
-  "yellow-6": { color: "red",   value: "7" },
-  "yellow-7": { color: "red",   value: "6" },
-  "yellow-8": { color: "red",   value: "5" },
-  "yellow-9": { color: "blue",  value: "4" },
-
-  // Green numbers
-  "green-1": { color: "red",   value: "4" },
-  "green-2": { color: "red",   value: "3" },
-  "green-3": { color: "red",   value: "2" },
-  "green-4": { color: "red",   value: "1" },
-  "green-5": { color: "blue",  value: "8" },
-  "green-6": { color: "blue",  value: "7" },
-  "green-7": { color: "blue",  value: "6" },
-  "green-8": { color: "yellow", value: "5" },
-  "green-9": { color: "blue",  value: "5" },
-
-  // Blue numbers
-  "blue-1": { color: "yellow", value: "4" },
-  "blue-2": { color: "yellow", value: "3" },
-  "blue-3": { color: "yellow", value: "2" },
-  "blue-4": { color: "yellow", value: "1" },
-  "blue-5": { color: "red",   value: "9" },
-  "blue-6": { color: "red",   value: "8" },
-  "blue-7": { color: "red",   value: "7" },
-  "blue-8": { color: "red",   value: "6" },
-  "blue-9": { color: "green",  value: "5" },
-
-  // Actions
-  "red-skip":    { color: "red",    value: "skip" },
-  "yellow-skip": { color: "yellow", value: "skip" },
-  "green-skip":  { color: "green",  value: "skip" },
-  "blue-skip":   { color: "blue",   value: "skip" },
-  "red-reverse": { color: "red",    value: "reverse" },
-  "yellow-reverse": { color: "yellow", value: "reverse" },
-  "green-reverse":  { color: "green",  value: "reverse" },
-  "blue-reverse":   { color: "blue",   value: "reverse" },
-  "red-draw2":  { color: "red",    value: "draw2" },
-  "yellow-draw2": { color: "yellow", value: "draw2" },
-  "green-draw2":  { color: "green",  value: "draw2" },
-  "blue-draw2":   { color: "blue",   value: "draw2" },
-
-  // Wilds
-  "wild-wild":   { color: "wild", value: "wild" },
-  "wild-wild4":  { color: "wild", value: "wild4" },
-};
-
-// Flip card: returns the opposite side (light ↔ dark)
+// ── Uno Flip symmetric card mapping (involution) ──
+// Each light card has a dark counterpart and vice‑versa.
+// Apply this function after flipping to transform the whole game state.
 function flipCard(c: UnoCard): UnoCard {
-  const key = `${c.color}-${c.value}`;
-  const target = LIGHT_TO_DARK[key];
-  if (target) {
-    return { ...c, color: target.color, value: target.value };
+  if (c.value === "flip") return c;               // Flip cards don't change
+
+  // Wilds stay wild but can change *which* wild (only if mapping says so)
+  if (c.color === "wild") {
+    // Wild and Wild+4 keep their values; color remains "wild"
+    return { ...c, color: "wild", value: c.value };
   }
-  // If no mapping exists, the card stays unchanged (shouldn't happen)
+
+  // ── Map colour ──
+  const colorMap: Record<UnoColor, UnoColor> = {
+    red: "blue",
+    yellow: "green",
+    green: "yellow",
+    blue: "red",
+  };
+
+  // ── Map number 0‑9 ──
+  const numMap: Record<string, string> = {
+    "0": "0", "1": "9", "2": "8", "3": "7", "4": "6",
+    "5": "5", "6": "4", "7": "3", "8": "2", "9": "1",
+  };
+
+  if (c.value >= "0" && c.value <= "9") {
+    return {
+      ...c,
+      color: colorMap[c.color as UnoColor],
+      value: numMap[c.value] as CardValue,
+    };
+  }
+
+  // ── Action cards (skip, reverse, draw2) keep the same action, change color ──
+  if (c.value === "skip" || c.value === "reverse" || c.value === "draw2") {
+    return { ...c, color: colorMap[c.color as UnoColor] };
+  }
+
+  // Fallback – should never happen
   return c;
 }
 
@@ -368,9 +334,9 @@ export function playCard(
 if (card.value === "flip") {
   s.gameSide = s.gameSide === "light" ? "dark" : "light";
   // Flip all cards in the game
-  s.discardPile = s.discardPile.map(flipCard) as UnoCard[];
-  s.drawPile = s.drawPile.map(flipCard) as UnoCard[];
-  s.hands = s.hands.map((hand) => hand.map(flipCard)) as UnoCard[][];
+  s.discardPile = s.discardPile.map() as UnoCard[];
+  s.drawPile = s.drawPile.map() as UnoCard[];
+  s.hands = s.hands.map((hand) => hand.map()) as UnoCard[][];
   s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
 }
 
