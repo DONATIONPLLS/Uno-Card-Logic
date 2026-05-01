@@ -15,7 +15,7 @@ import {
   type GameState,
   type UnoCard,
   type UnoColor,
-  type drawSingle,
+  drawSingle,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
 import { RulesPanel } from "@/components/RulesPanel";
@@ -587,11 +587,13 @@ const processBotTurn = useCallback(() => {
     return "idle";
   };
 
-  return (
-    <div
-      className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
-      style={{ background: tableBg }} const darkFilter = flipMode && game.gameSide === "dark" ? "dark-flip" : "";
-      >
+  const darkFilter = flipMode && game.gameSide === "dark" ? "dark-flip" : "";
+
+return (
+  <div
+    className={`min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out] ${darkFilter}`}
+    style={{ background: tableBg }}
+  >
       
       <header
         className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-[#0a0a0c] z-10 gap-2"
