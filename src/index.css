@@ -18,6 +18,9 @@
   .pt-safe-header {
     padding-top: max(env(safe-area-inset-top), 0.5rem);
   }
+   .dark-flip {
+ filter: invert(0.9) hue-rotate(180deg) saturate(1.5) brightness(1.2);
+  }
 }
 
 @layer base {
