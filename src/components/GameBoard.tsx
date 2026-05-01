@@ -15,6 +15,7 @@ import {
   type GameState,
   type UnoCard,
   type UnoColor,
+  type drawSingle,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
 import { RulesPanel } from "@/components/RulesPanel";
@@ -154,19 +155,11 @@ const startDrawAnimation = useCallback(
       }
 
       const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
-      const placeholderCard: UnoCard = {
-        id: flightId,
-        color: "wild",
-        value: "wild",
-      };
-
+      const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
       const flight: Flight = {
         id: flightId,
         card: placeholderCard,
-        start: {
-          x: sRect.left + sRect.width / 2,
-          y: sRect.top + sRect.height / 2,
-        },
+        start: { x: sRect.left + sRect.width / 2, y: sRect.top + sRect.height / 2 },
         end: { x: endX, y: endY },
         faceDown: true,
       };
@@ -175,29 +168,28 @@ const startDrawAnimation = useCallback(
 
       setTimeout(() => {
         setFlights((prev) => prev.filter((f) => f.id !== flightId));
+
+        // Actually draw one card for the player → hand updates immediately
+        setGame((g) => drawSingle(g, playerIdx));
+
         if (currentIndex === numCards - 1) {
-          // Last flight finished → apply the real draw
+          // All draws finished
           setTimeout(() => {
-            setGame((g) => {
-              const newState = drawOne(g, playerIdx);
-              // Allow bot to continue after state settles
-              setTimeout(() => onComplete?.(), 10);
-              return newState;
-            });
             isDrawingRef.current = false;
+            onComplete?.();
           }, 40);
         }
       }, 520);
 
       count++;
       if (count < numCards) {
-        setTimeout(launchOne, 500);   // ← 125 ms between cards
+        setTimeout(launchOne, 500);   // 500ms stagger
       }
     };
 
     launchOne();
   },
-  [handViewIdx, setFlights, setGame]
+  [handViewIdx, setFlights, setGame],
 );
 
 const processBotTurn = useCallback(() => {
@@ -598,7 +590,13 @@ const processBotTurn = useCallback(() => {
   return (
     <div
       className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
-      style={{ background: tableBg }}
+      style={{ background: tableBg }}const darkFilter = flipMode && game.gameSide === "dark" ? "dark-flip" : "";
+
+return (
+  <div
+    className={`min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out] ${darkFilter}`}
+    style={{ background: tableBg }}
+  >
     >
       <header
         className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-[#0a0a0c] z-10 gap-2"
