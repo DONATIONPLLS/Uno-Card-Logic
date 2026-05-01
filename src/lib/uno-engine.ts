@@ -331,12 +331,13 @@ export function playCard(
   }
 
  // Uno Flip: transform all cards to the opposite side
+ // Uno Flip: transform all cards to the opposite side
 if (card.value === "flip") {
   s.gameSide = s.gameSide === "light" ? "dark" : "light";
   // Flip all cards in the game
-  s.discardPile = s.discardPile.map() as UnoCard[];
-  s.drawPile = s.drawPile.map() as UnoCard[];
-  s.hands = s.hands.map((hand) => hand.map()) as UnoCard[][];
+  s.discardPile = s.discardPile.map(flipCard);
+  s.drawPile = s.drawPile.map(flipCard);
+  s.hands = s.hands.map((hand) => hand.map(flipCard));
   s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
 }
 
