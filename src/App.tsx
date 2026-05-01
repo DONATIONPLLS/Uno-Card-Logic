@@ -20,6 +20,7 @@ import { HostLobby, type HostStartResult } from "@/components/HostLobby";
 import { JoinScreen, type JoinStartResult } from "@/components/JoinScreen";
 import type { HostHandle, JoinHandle, SyncMessage } from "@/lib/peerSync";
 
+const wasNetworkGame = useRef(false);
 const STORAGE_KEY = "uno-buddy:game";
 
 type Screen =
@@ -147,6 +148,7 @@ function App() {
   const exitGame = () => {
     cleanupMulti();
     setScreen("menu");
+wasNetworkGame.current = false;
   };
 
   const joinerActions: GameActions | undefined =
@@ -173,6 +175,7 @@ function App() {
       peerAssignments: r.peerAssignments,
     });
     setScreen("game");
+wasNetworkGame.current = true;
   };
 
   const onJoinStart = (r: JoinStartResult) => {
@@ -185,6 +188,7 @@ function App() {
       peerAssignments: {},
     });
     setScreen("game");
+wasNetworkGame.current = true;
   };
 
   return (
@@ -195,8 +199,12 @@ function App() {
      */
     <div className="animate-[fadeSlide_.28s_cubic-bezier(.2,.8,.2,1)]">
       {screen === "menu" ? (
-        <MainMenu
-          hasSavedGame={game !== null && game.winner === null && !multi}
+<MainMenu
+  hasSavedGame={
+    game !== null &&
+    game.winner === null &&
+    !multi &&
+    !wasNetworkGame.current}
           onContinue={() => setScreen("game")}
           onNew={() => setScreen("startMode")}
           onScoring={() => setScreen("scoring")}
