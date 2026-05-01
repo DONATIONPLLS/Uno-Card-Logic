@@ -375,11 +375,13 @@ const processBotTurn = useCallback(() => {
 
   // ── Pass-and-play overlays ──
   useEffect(() => {
-    if (!isPassAndPlay) {
-      setRevealed(true);
-      setOverlayKind(null);
-      return;
-    }
+if (!isPassAndPlay) {
+  setRevealed(true);
+  setOverlayKind(null);
+  return;
+}
+if (isDrawingRef.current) return;  // ← ADD THIS
+
     const prev = prevTurnRef.current;
     if (prev === currentIdx) return;
     prevTurnRef.current = currentIdx;
@@ -511,27 +513,31 @@ const processBotTurn = useCallback(() => {
   };
 
   const onDrawPileTap = () => {
-    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-    if (isDrawingRef.current) return;
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (isDrawingRef.current) return;
 
-    if (selectedId) {
-      setSelectedId(null);
-      return;
-    }
-    if (hasDrawnThisTurn) return;
+  if (selectedId) {
+    setSelectedId(null);
+    return;
+  }
+  if (hasDrawnThisTurn) return;
 
-    if (!drawArmed) {
-      sfx.click();
-      haptics.light();
-      setDrawArmed(true);
-      return;
-    }
+  if (!drawArmed) {
+    sfx.click();
+    haptics.light();
+    setDrawArmed(true);
+    return;
+  }
 
-    const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-    startDrawAnimation(handViewIdx, cardsToDraw);
-    setDrawArmed(false);
-    setHasDrawnThisTurn(true);
-  };
+  // Second tap – start animation
+  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+  setDrawArmed(false);
+  setHasDrawnThisTurn(true);
+  startDrawAnimation(handViewIdx, cardsToDraw, () => {
+    // Ensure local state is correct after draw finishes
+    isDrawingRef.current = false; // extra safety
+  });
+};
 
   const onPass = () => {
     if (!myTurn || !revealed) return;
@@ -720,18 +726,9 @@ return (
           </button>
 
 <div className="flex flex-col items-center gap-1">
-  <AnimatePresence mode="wait">
-    <motion.div
-      key={visibleTop.id}
-      ref={discardRef}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.12 }}
-    >
-      <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
-    </motion.div>
-  </AnimatePresence>
+  <motion.div ref={discardRef} key={visibleTop.id}>
+    <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
+  </motion.div>
   <span className="text-[10px] text-white/60">Top</span>
 </div>
         </div>
