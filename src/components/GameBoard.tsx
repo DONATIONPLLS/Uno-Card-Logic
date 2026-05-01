@@ -57,6 +57,7 @@ interface Flight {
   start: { x: number; y: number };
   end: { x: number; y: number };
   faceDown: boolean;
+  initialRotate?: number;   // ← ADD THIS LINE
 }
 
 interface PendingOrigin {
@@ -315,12 +316,13 @@ const processBotTurn = useCallback(() => {
           return;
         }
         newFlights.push({
-          id: `play-${playedCard.id}-${now}`,
-          card: playedCard,
-          start: { x: startX, y: startY },
-          end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
-          faceDown: false,
-        });
+  id: `play-${playedCard.id}-${now}`,
+  card: playedCard,
+  start: { x: startX, y: startY },
+  end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
+  faceDown: false,
+  initialRotate: Math.random() * 20 - 10,   // ← ADD THIS LINE
+});
         newTopSuppress = playedCard.id;
       }
       // Draw flights are now completely handled by startDrawAnimation,
@@ -723,12 +725,18 @@ const processBotTurn = useCallback(() => {
           </button>
 
 <div className="flex flex-col items-center gap-1">
-  <motion.div
-    ref={discardRef}
-    key={visibleTop.id}
-  >
-    <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
-  </motion.div>
+  <AnimatePresence mode="wait">
+    <motion.div
+      key={visibleTop.id}
+      ref={discardRef}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.12 }}
+    >
+      <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
+    </motion.div>
+  </AnimatePresence>
   <span className="text-[10px] text-white/60">Top</span>
 </div>
         </div>
@@ -870,13 +878,18 @@ const processBotTurn = useCallback(() => {
           <motion.div
             key={f.id}
             className="absolute"
-            initial={{ x: f.start.x - 32, y: f.start.y - 48, opacity: 0, rotate: 0 }}
-            animate={{
-              x: f.end.x - 32,
-              y: f.end.y - 48,
-              opacity: [0, 1, 1, 1],
-              rotate: f.faceDown ? 0 : Math.random() * 20 - 10,
-            }}
+            initial={{
+  x: f.start.x - 32,
+  y: f.start.y - 48,
+  opacity: 0,
+  rotate: f.initialRotate ?? 0,          // ← use stored value
+}}
+animate={{
+  x: f.end.x - 32,
+  y: f.end.y - 48,
+  opacity: [0, 1, 1, 1],
+  rotate: 0,                              // ← straight at destination
+}}
             transition={{ duration: 0.5, ease: "easeInOut" }}
           >
             <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" />
