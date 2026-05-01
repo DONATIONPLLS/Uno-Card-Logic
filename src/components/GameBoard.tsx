@@ -190,7 +190,7 @@ const startDrawAnimation = useCallback(
 
       count++;
       if (count < numCards) {
-        setTimeout(launchOne, 125);   // ← 125 ms between cards
+        setTimeout(launchOne, 500);   // ← 125 ms between cards
       }
     };
 
@@ -777,7 +777,16 @@ const processBotTurn = useCallback(() => {
             <ScoreBadge score={game.scores[handViewIdx] ?? 0} />
             <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
-          {selectedId && selectedPlayable ? (
+         {/* Penalty draw button (only when pendingDraw > 0 and no card selected) */}
+{myTurn && !viewerIsBot && game.pendingDraw > 0 && !selectedId ? (
+  <button
+    onClick={() => startDrawAnimation(handViewIdx, game.pendingDraw)}
+    className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(215_85%_45%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+    disabled={isDrawingRef.current}
+  >
+    Draw {game.pendingDraw}
+  </button>
+) : selectedId && selectedPlayable ? (
             <button
               onClick={confirmPlay}
               className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
@@ -865,7 +874,7 @@ const processBotTurn = useCallback(() => {
             animate={{
               x: f.end.x - 32,
               y: f.end.y - 48,
-              opacity: [0, 1, 1, 0],
+              opacity: [0, 1, 1, 1],
               rotate: f.faceDown ? 0 : Math.random() * 20 - 10,
             }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
