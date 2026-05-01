@@ -512,7 +512,7 @@ if (isDrawingRef.current) return;  // ← ADD THIS
     setSelectedId(null);
   };
 
-  const onDrawPileTap = () => {
+const onDrawPileTap = () => {
   if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
   if (isDrawingRef.current) return;
 
@@ -535,7 +535,11 @@ if (isDrawingRef.current) return;  // ← ADD THIS
   setHasDrawnThisTurn(true);
   startDrawAnimation(handViewIdx, cardsToDraw, () => {
     // Ensure local state is correct after draw finishes
-    isDrawingRef.current = false; // extra safety
+    isDrawingRef.current = false;
+    // If this was a penalty draw, the victim's turn is skipped automatically
+    if (game.pendingDraw > 0) {
+      act.endTurn();
+    }
   });
 };
 
