@@ -74,6 +74,23 @@ export function cardPointValue(c: UnoCard): number {
   return parseInt(c.value, 10) || 0;
 }
 
+// Flip mapping: each light card (except Flip itself) has a corresponding dark card.
+// For simplicity, we map numbers to numbers, actions to actions, wilds keep their value.
+const FLIP_MAP: Record<string, { color: WildColor; value: CardValue }> = {
+  // color-number pairs (dark side colors are often different)
+  "red-0":   { color: "blue",   value: "0" },
+  "red-1":   { color: "blue",   value: "1" },
+  // … define all 108 combinations …
+  // For a fast prototype, you can just invert colors and keep the value:
+};
+
+function flipCard(c: UnoCard): UnoCard {
+  if (c.value === "flip") return c; // flip card itself doesn't change?
+  const key = `${c.color}-${c.value}`;
+  const mapped = FLIP_MAP[key];
+  return mapped ? { ...c, ...mapped } : c;
+}
+
 export function tallyRoundScore(state: GameState, winnerIdx: number): number {
   let total = 0;
   state.hands.forEach((hand, i) => {
@@ -82,7 +99,6 @@ export function tallyRoundScore(state: GameState, winnerIdx: number): number {
   });
   return total;
 }
-
 const COLORS: UnoColor[] = ["red", "yellow", "green", "blue"];
 const NUMBERS: CardValue[] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const ACTIONS: CardValue[] = ["skip", "reverse", "draw2"];
@@ -287,6 +303,15 @@ export function playCard(
     s.activeColor = chosenColor ?? "red";
     s.log.unshift(`${nameOf(s.players[playerIdx])} chose ${s.activeColor}.`);
   }
+
+  if (card.value === "flip") {
+  s.gameSide = s.gameSide === "light" ? "dark" : "light";
+  // Flip all cards in the game
+  s.discardPile = s.discardPile.map(flipCard) as UnoCard[];
+  s.drawPile = s.drawPile.map(flipCard) as UnoCard[];
+  s.hands = s.hands.map((hand) => hand.map(flipCard)) as UnoCard[][];
+  s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
+}
 
   if (hand.length === 0) {
     s.winner = playerIdx;
