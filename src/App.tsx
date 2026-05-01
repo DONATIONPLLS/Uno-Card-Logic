@@ -20,7 +20,6 @@ import { HostLobby, type HostStartResult } from "@/components/HostLobby";
 import { JoinScreen, type JoinStartResult } from "@/components/JoinScreen";
 import type { HostHandle, JoinHandle, SyncMessage } from "@/lib/peerSync";
 
-const wasNetworkGame = useRef(false);
 const STORAGE_KEY = "uno-buddy:game";
 
 type Screen =
@@ -66,6 +65,7 @@ function App() {
   const [showRules, setShowRules] = useState(false);
   const [multi, setMulti] = useState<MultiSession | null>(null);
   const gameRef = useRef<GameState | null>(game);
+  const wasNetworkGame = useRef(false);
   gameRef.current = game;
 
   useEffect(() => {
