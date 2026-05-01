@@ -590,14 +590,9 @@ const processBotTurn = useCallback(() => {
   return (
     <div
       className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
-      style={{ background: tableBg }}const darkFilter = flipMode && game.gameSide === "dark" ? "dark-flip" : "";
-
-return (
-  <div
-    className={`min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out] ${darkFilter}`}
-    style={{ background: tableBg }}
-  >
-    >
+      style={{ background: tableBg }} const darkFilter = flipMode && game.gameSide === "dark" ? "dark-flip" : "";
+      >
+      
       <header
         className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-[#0a0a0c] z-10 gap-2"
         style={{ paddingTop: "max(env(safe-area-inset-top), 0.5rem)" }}
