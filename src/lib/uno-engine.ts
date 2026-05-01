@@ -153,25 +153,14 @@ export function isValidMove(
   if (rules.allWild) return true;
 
   // ── Pending draw: only stacking moves are legal ──
-  if (pendingDraw > 0) {
-    if (!rules.stackDraws) return false;
-
-    if (topCard.value === "draw2") {
-      // Another +2 escalates; any same-colour card escapes the penalty
-      if (card.value === "draw2") return true;
-      if (card.color !== "wild" && card.color === activeColor) return true;
-      return false;
-    }
-
-    if (topCard.value === "wild4") {
-      // Another +4 escalates; any same-colour card escapes the penalty
-      if (card.value === "wild4") return true;
-      if (card.color !== "wild" && card.color === activeColor) return true;
-      return false;
-    }
-
-    return false;
-  }
+ if (pendingDraw > 0) {
+  if (!rules.stackDraws) return false;
+  // Only another +2 can be played on a +2, and only another +4 on a +4
+  if (topCard.value === "draw2" && card.value === "draw2") return true;
+  if (topCard.value === "wild4" && card.value === "wild4") return true;
+  if (topCard.value === "draw2" && card.value === "wild4") return true;
+  return false;
+}
 
   // ── Normal turn ──
   if (card.color === "wild") return true;
