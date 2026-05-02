@@ -1,5 +1,5 @@
 // src/components/GameBoard.tsx
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   chooseBotMove,
@@ -12,6 +12,7 @@ import {
   nextPlayer,
   playCard,
   resolveSwap,
+  drawPenaltyThenEnd, // <-- added for immediate penalty skip
   type GameState,
   type UnoCard,
   type UnoColor,
@@ -58,7 +59,7 @@ interface Flight {
   start: { x: number; y: number };
   end: { x: number; y: number };
   faceDown: boolean;
-  initialRotate?: number;   // ← ADD THIS LINE
+  initialRotate?: number;
 }
 
 interface PendingOrigin {
@@ -86,8 +87,8 @@ export function GameBoard({
   const isPassAndPlay = passAndPlay ?? viewerIdx === undefined;
   const handViewIdx = viewerIdx ?? game.currentPlayer;
   const flipMode = game.mode === "flip";
-  
-  const pendingPlayFlight = useRef(false);   // true while a play animation is still flying
+
+  const pendingPlayFlight = useRef(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickColorFor, setPickColorFor] = useState<string | null>(null);
@@ -119,143 +120,135 @@ export function GameBoard({
   const gameRef = useRef<GameState | null>(game);
   gameRef.current = game;
 
-  // ── Staggered draw refs ──
   const isDrawingRef = useRef(false);
   const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper: start the staggered draw animation
-const startDrawAnimation = useCallback(
-  (playerIdx: number, numCards: number, onComplete?: () => void) => {
-    if (isDrawingRef.current) return;
-    isDrawingRef.current = true;
+  const startDrawAnimation = useCallback(
+    (playerIdx: number, numCards: number, onComplete?: () => void) => {
+      if (isDrawingRef.current) return;
+      isDrawingRef.current = true;
 
-    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
 
-    let count = 0;
+      let count = 0;
 
-    const launchOne = () => {
-      if (count >= numCards) return;
+      const launchOne = () => {
+        if (count >= numCards) return;
 
-      const currentIndex = count;
-      const src = drawPileRef.current;
-      if (!src) return;
+        const currentIndex = count;
+        const src = drawPileRef.current;
+        if (!src) return;
 
-      const sRect = src.getBoundingClientRect();
+        const sRect = src.getBoundingClientRect();
 
-      let endX: number, endY: number;
-      if (playerIdx === handViewIdx && handZoneRef.current) {
-        const hz = handZoneRef.current.getBoundingClientRect();
-        endX = hz.right - 40;
-        endY = hz.top + hz.height / 2;
-      } else {
-        const seat = seatRefs.current[playerIdx];
-        if (!seat) return;
-        const seatRect = seat.getBoundingClientRect();
-        endX = seatRect.left + seatRect.width / 2;
-        endY = seatRect.top + seatRect.height / 2;
-      }
+        let endX: number, endY: number;
+        if (playerIdx === handViewIdx && handZoneRef.current) {
+          const hz = handZoneRef.current.getBoundingClientRect();
+          endX = hz.right - 40;
+          endY = hz.top + hz.height / 2;
+        } else {
+          const seat = seatRefs.current[playerIdx];
+          if (!seat) return;
+          const seatRect = seat.getBoundingClientRect();
+          endX = seatRect.left + seatRect.width / 2;
+          endY = seatRect.top + seatRect.height / 2;
+        }
 
-      const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
-      const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
-      const flight: Flight = {
-        id: flightId,
-        card: placeholderCard,
-        start: { x: sRect.left + sRect.width / 2, y: sRect.top + sRect.height / 2 },
-        end: { x: endX, y: endY },
-        faceDown: true,
+        const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
+        const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
+        const flight: Flight = {
+          id: flightId,
+          card: placeholderCard,
+          start: { x: sRect.left + sRect.width / 2, y: sRect.top + sRect.height / 2 },
+          end: { x: endX, y: endY },
+          faceDown: true,
+        };
+
+        setFlights((prev) => [...prev, flight]);
+
+        setTimeout(() => {
+          setFlights((prev) => prev.filter((f) => f.id !== flightId));
+          setGame((g) => drawSingle(g, playerIdx));
+
+          if (currentIndex === numCards - 1) {
+            setTimeout(() => {
+              isDrawingRef.current = false;
+              onComplete?.();
+            }, 40);
+          }
+        }, 520);
+
+        count++;
+        if (count < numCards) {
+          setTimeout(launchOne, 500);
+        }
       };
 
-      setFlights((prev) => [...prev, flight]);
+      launchOne();
+    },
+    [handViewIdx, setFlights, setGame],
+  );
 
-      setTimeout(() => {
-        setFlights((prev) => prev.filter((f) => f.id !== flightId));
+  const processBotTurn = useCallback(() => {
+    const g = gameRef.current;
+    if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
+    if (g.players[g.currentPlayer]?.kind !== "bot") return;
 
-        // Actually draw one card for the player → hand updates immediately
-        setGame((g) => drawSingle(g, playerIdx));
+    const move = chooseBotMove(g, g.currentPlayer);
 
-        if (currentIndex === numCards - 1) {
-          // All draws finished
-          setTimeout(() => {
-            isDrawingRef.current = false;
-            onComplete?.();
-          }, 40);
-        }
-      }, 520);
-
-      count++;
-      if (count < numCards) {
-        setTimeout(launchOne, 500);   // 500ms stagger
-      }
-    };
-
-    launchOne();
-  },
-  [handViewIdx, setFlights, setGame],
-);
-
-const processBotTurn = useCallback(() => {
-  const g = gameRef.current;
-  if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
-  if (g.players[g.currentPlayer]?.kind !== "bot") return;
-
-  const move = chooseBotMove(g, g.currentPlayer);
-
-  if (move.type === "draw") {
-    const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
-    startDrawAnimation(g.currentPlayer, toDraw, () => {
-      // After drawing, check if the drawn card is playable and play it, otherwise end turn
-      setGame((prev) => {
-        const hand = prev.hands[prev.currentPlayer];
-        const lastCard = hand[hand.length - 1];
-        if (
-          lastCard &&
-          isValidMove(
-            lastCard,
-            prev.[prev..length - 1],
-            prev.activeColor,
-            prev.pendingDraw,
-            prev.houseRules,
-          )
-        ) {
-          // If wild, pick a color (simple heuristic: most frequent color in hand)
-          if (lastCard.color === "wild") {
-            const colorCounts: Record<string, number> = {};
-            hand.forEach((c) => {
-              if (c.color !== "wild") colorCounts[c.color] = (colorCounts[c.color] || 0) + 1;
-            });
-            const bestColor = Object.keys(colorCounts).reduce((a, b) =>
-              colorCounts[a] > colorCounts[b] ? a : b,
-              "red",
-            );
-            return playCard(prev, prev.currentPlayer, lastCard.id, bestColor as UnoColor);
+    if (move.type === "draw") {
+      const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
+      startDrawAnimation(g.currentPlayer, toDraw, () => {
+        setGame((prev) => {
+          const hand = prev.hands[prev.currentPlayer];
+          const lastCard = hand[hand.length - 1];
+          if (
+            lastCard &&
+            isValidMove(
+              lastCard,
+              prev.discardPile[prev.discardPile.length - 1],
+              prev.activeColor,
+              prev.pendingDraw,
+              prev.houseRules,
+            )
+          ) {
+            if (lastCard.color === "wild") {
+              const colorCounts: Record<string, number> = {};
+              hand.forEach((c) => {
+                if (c.color !== "wild") colorCounts[c.color] = (colorCounts[c.color] || 0) + 1;
+              });
+              const bestColor = Object.keys(colorCounts).reduce((a, b) =>
+                colorCounts[a] > colorCounts[b] ? a : b,
+                "red",
+              );
+              return playCard(prev, prev.currentPlayer, lastCard.id, bestColor as UnoColor);
+            }
+            return playCard(prev, prev.currentPlayer, lastCard.id);
           }
-          return playCard(prev, prev.currentPlayer, lastCard.id);
-        }
-        return endTurn(prev, prev.currentPlayer);
+          return endTurn(prev, prev.currentPlayer);
+        });
       });
-    });
-  } else if (move.type === "play") {
-    setGame((prev) =>
-      playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor),
-    );
-  }
-}, [startDrawAnimation, setGame]);
-
-  // ── Existing logic below (same as before except bot loop replaced) ──
+    } else if (move.type === "play") {
+      setGame((prev) =>
+        playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor),
+      );
+    }
+  }, [startDrawAnimation, setGame]);
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
   const myTurn = handViewIdx === currentIdx && game.winner === null;
   const isHumanTurn = currentPlayer?.kind === "human" && game.winner === null;
-  const top = game.[game..length - 1];
+  const top = game.discardPile[game.discardPile.length - 1];
   const upNextIdx = nextPlayer(game);
   const upNext = game.players[upNextIdx];
   const viewerPlayer = game.players[handViewIdx];
   const viewerIsBot = viewerPlayer?.kind === "bot";
   const visibleTop =
-    suppressedTopId && suppressedTopId === top.id && game..length >= 2
-      ? game.[game..length - 2]
+    suppressedTopId && suppressedTopId === top.id && game.discardPile.length >= 2
+      ? game.discardPile[game.discardPile.length - 2]
       : top;
 
   const act: GameActions = actions ?? {
@@ -287,8 +280,8 @@ const processBotTurn = useCallback(() => {
       const delta = after - before;
       const seat = seatRefs.current[i];
 
-      if (delta === -1 && game..length === prev..length + 1) {
-        const playedCard = game.[game..length - 1];
+      if (delta === -1 && game.discardPile.length === prev.discardPile.length + 1) {
+        const playedCard = game.discardPile[game.discardPile.length - 1];
         const dst = discardRef.current;
         if (!dst || !playedCard) return;
         const d = dst.getBoundingClientRect();
@@ -310,30 +303,28 @@ const processBotTurn = useCallback(() => {
           return;
         }
         newFlights.push({
-  id: `play-${playedCard.id}-${now}`,
-  card: playedCard,
-  start: { x: startX, y: startY },
-  end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
-  faceDown: false,
-  initialRotate: Math.random() * 20 - 10,   // ← ADD THIS LINE
-});
+          id: `play-${playedCard.id}-${now}`,
+          card: playedCard,
+          start: { x: startX, y: startY },
+          end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
+          faceDown: false,
+          initialRotate: Math.random() * 20 - 10,
+        });
         newTopSuppress = playedCard.id;
       }
-      // Draw flights are now completely handled by startDrawAnimation,
-      // so we skip the delta > 0 branch here.
     });
 
-if (newFlights.length === 0) return;
-setFlights((prevFs) => [...prevFs, ...newFlights]);
-if (newTopSuppress) setSuppressedTopId(newTopSuppress);
-pendingPlayFlight.current = true;                          // ← ADD
-const ids = newFlights.map((f) => f.id);
-const t = setTimeout(() => {
-  setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
-  if (newTopSuppress) setSuppressedTopId(null);
-  pendingPlayFlight.current = false;                       // ← ADD
-}, 520);
-return () => clearTimeout(t);
+    if (newFlights.length === 0) return;
+    setFlights((prevFs) => [...prevFs, ...newFlights]);
+    if (newTopSuppress) setSuppressedTopId(newTopSuppress);
+    pendingPlayFlight.current = true;
+    const ids = newFlights.map((f) => f.id);
+    const t = setTimeout(() => {
+      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
+      if (newTopSuppress) setSuppressedTopId(null);
+      pendingPlayFlight.current = false;
+    }, 520);
+    return () => clearTimeout(t);
   }, [game, handViewIdx]);
 
   // ── Win detection ──
@@ -379,12 +370,12 @@ return () => clearTimeout(t);
 
   // ── Pass-and-play overlays ──
   useEffect(() => {
-if (!isPassAndPlay) {
-  setRevealed(true);
-  setOverlayKind(null);
-  return;
-}
-if (isDrawingRef.current) return;  // ← ADD THIS
+    if (!isPassAndPlay) {
+      setRevealed(true);
+      setOverlayKind(null);
+      return;
+    }
+    if (isDrawingRef.current) return;
 
     const prev = prevTurnRef.current;
     if (prev === currentIdx) return;
@@ -441,18 +432,18 @@ if (isDrawingRef.current) return;  // ← ADD THIS
     };
   }, []);
 
-  // ── Bot loop (NEW: uses staggered draw) ──
+  // ── Bot loop ──
   useEffect(() => {
-  if (!enableBots || game.winner || isDrawingRef.current || pendingPlayFlight.current) return;
-  const current = game.players[game.currentPlayer];
-  if (!current || current.kind !== "bot") return;
+    if (!enableBots || game.winner || isDrawingRef.current || pendingPlayFlight.current) return;
+    const current = game.players[game.currentPlayer];
+    if (!current || current.kind !== "bot") return;
 
-  const delay = 1200 + Math.random() * 800;
-  botTimeoutRef.current = setTimeout(processBotTurn, delay);
-  return () => {
-    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
-  };
-}, [game.currentPlayer, game.winner, enableBots, pendingPlayFlight.current, processBotTurn]);
+    const delay = 1200 + Math.random() * 800;
+    botTimeoutRef.current = setTimeout(processBotTurn, delay);
+    return () => {
+      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+    };
+  }, [game.currentPlayer, game.winner, enableBots, pendingPlayFlight.current, processBotTurn]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -516,36 +507,34 @@ if (isDrawingRef.current) return;  // ← ADD THIS
     setSelectedId(null);
   };
 
-const onDrawPileTap = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-  if (isDrawingRef.current) return;
+  const onDrawPileTap = () => {
+    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+    if (isDrawingRef.current) return;
 
-  if (selectedId) {
-    setSelectedId(null);
-    return;
-  }
-  if (hasDrawnThisTurn) return;
-
-  if (!drawArmed) {
-    sfx.click();
-    haptics.light();
-    setDrawArmed(true);
-    return;
-  }
-
-  // Second tap – start animation
-  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-  setDrawArmed(false);
-  setHasDrawnThisTurn(true);
-  startDrawAnimation(handViewIdx, cardsToDraw, () => {
-    // Ensure local state is correct after draw finishes
-    isDrawingRef.current = false;
-    // If this was a penalty draw, the victim's turn is skipped automatically
-    if (game.pendingDraw > 0) {
-      act.endTurn();
+    if (selectedId) {
+      setSelectedId(null);
+      return;
     }
-  });
-};
+    if (hasDrawnThisTurn) return;
+
+    if (!drawArmed) {
+      sfx.click();
+      haptics.light();
+      setDrawArmed(true);
+      return;
+    }
+
+    // Second tap – start animation
+    const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+    setDrawArmed(false);
+    setHasDrawnThisTurn(true);
+    startDrawAnimation(handViewIdx, cardsToDraw, () => {
+      isDrawingRef.current = false;
+      if (game.pendingDraw > 0) {
+        act.endTurn();
+      }
+    });
+  };
 
   const onPass = () => {
     if (!myTurn || !revealed) return;
@@ -574,15 +563,16 @@ const onDrawPileTap = () => {
 
   const myHand = game.hands[handViewIdx] ?? [];
   const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
-const canPass = useMemo(() => {
-  return (
-    myTurn &&
-    hasDrawnThisTurn &&
-    !playableExists &&
-    game.pendingAction === null &&
-    !isDrawingRef.current
-  );
-}, [myTurn, hasDrawnThisTurn, playableExists, game.pendingAction, isDrawingRef.current]);
+  const canPass = useMemo(() => {
+    return (
+      myTurn &&
+      hasDrawnThisTurn &&
+      !playableExists &&
+      game.pendingAction === null &&
+      !isDrawingRef.current
+    );
+  }, [myTurn, hasDrawnThisTurn, playableExists, game.pendingAction, isDrawingRef.current]);
+
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
@@ -609,14 +599,11 @@ const canPass = useMemo(() => {
     return "idle";
   };
 
-  const darkFilter = flipMode && game.gameSide === "dark" ? "dark-flip" : "";
-
-return (
-  <div
-    className={`min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]`}
-    style={{ background: tableBg }}
-  >
-      
+  return (
+    <div
+      className="min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]"
+      style={{ background: tableBg }}
+    >
       <header
         className="flex items-center justify-between px-3 pb-2 border-b border-white/10 bg-[#0a0a0c] z-10 gap-2"
         style={{ paddingTop: "max(env(safe-area-inset-top), 0.5rem)" }}
@@ -677,7 +664,7 @@ return (
               flipMode={flipMode}
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
-              darkSide={game.gameSide === "dark"}   // <-- add this
+              darkSide={game.gameSide === "dark"}
             />
           ) : null}
         </div>
@@ -692,7 +679,7 @@ return (
               flipMode={flipMode}
               score={game.scores[seatAt("left")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
-              darkSide={game.gameSide === "dark"}   // <-- add this
+              darkSide={game.gameSide === "dark"}
             />
           ) : null}
         </div>
@@ -707,7 +694,7 @@ return (
               flipMode={flipMode}
               score={game.scores[seatAt("right")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
-              darkSide={game.gameSide === "dark"}   // <-- add this
+              darkSide={game.gameSide === "dark"}
             />
           ) : null}
         </div>
@@ -737,7 +724,7 @@ return (
                 faceDown
                 flipMode={flipMode}
                 size="md"
-                darkSide={game.gameSide === "dark"}   // <-- add this
+                darkSide={game.gameSide === "dark"}
               />
             </div>
             <span className="text-[10px] text-white/70">
@@ -745,13 +732,12 @@ return (
             </span>
           </button>
 
-<div className="flex flex-col items-center gap-1">
-  <motion.div ref={discardRef} key={visibleTop.id}>
-    <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} 
-    darkSide={game.gameSide === "dark"}   // <-- add this/>
-  </motion.div>
-  <span className="text-[10px] text-white/60">Top</span>
-</div>
+          <div className="flex flex-col items-center gap-1">
+            <motion.div ref={discardRef} key={visibleTop.id}>
+              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={game.gameSide === "dark"} />
+            </motion.div>
+            <span className="text-[10px] text-white/60">Top</span>
+          </div>
         </div>
 
         {announcement ? (
@@ -798,23 +784,21 @@ return (
             <ScoreBadge score={game.scores[handViewIdx] ?? 0} />
             <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
-          
-        {/* Penalty draw – instantly skip turn */}
-{myTurn && !viewerIsBot && game.pendingDraw > 0 && !selectedId ? (
-  <button
-    onClick={() => {
-      // Clear any selection + arm state
-      setSelectedId(null);
-      setDrawArmed(false);
-      // Immediately perform the draw + skip in the engine
-      setGame((g) => drawPenaltyThenEnd(g, handViewIdx));
-    }}
-    className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(215_85%_45%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
-    disabled={isDrawingRef.current}
-  >
-    Draw {game.pendingDraw}
-  </button>
-) : selectedId && selectedPlayable ? (
+
+          {/* Penalty draw – instantly skip turn */}
+          {myTurn && !viewerIsBot && game.pendingDraw > 0 && !selectedId ? (
+            <button
+              onClick={() => {
+                setSelectedId(null);
+                setDrawArmed(false);
+                setGame((g) => drawPenaltyThenEnd(g, handViewIdx));
+              }}
+              className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(215_85%_45%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+              disabled={isDrawingRef.current}
+            >
+              Draw {game.pendingDraw}
+            </button>
+          ) : selectedId && selectedPlayable ? (
             <button
               onClick={confirmPlay}
               className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
@@ -877,7 +861,7 @@ return (
                         faceDown={showFaceDown}
                         flipMode={flipMode}
                         size="lg"
-                        darkSide={game.gameSide === "dark"}   // <-- add this
+                        darkSide={game.gameSide === "dark"}
                       />
                     </div>
                   </motion.div>
@@ -900,21 +884,20 @@ return (
             key={f.id}
             className="absolute"
             initial={{
-  x: f.start.x - 32,
-  y: f.start.y - 48,
-  opacity: 0,
-  rotate: f.initialRotate ?? 0,          // ← use stored value
-}}
-animate={{
-  x: f.end.x - 32,
-  y: f.end.y - 48,
-  opacity: [0, 1, 1, 1],
-  rotate: 0,                              // ← straight at destination
-}}
+              x: f.start.x - 32,
+              y: f.start.y - 48,
+              opacity: 0,
+              rotate: f.initialRotate ?? 0,
+            }}
+            animate={{
+              x: f.end.x - 32,
+              y: f.end.y - 48,
+              opacity: [0, 1, 1, 1],
+              rotate: 0,
+            }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
           >
-            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" 
-            darkSide={game.gameSide === "dark"}   // <-- add this/>
+            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" darkSide={game.gameSide === "dark"} />
           </motion.div>
         ))}
       </div>
@@ -975,7 +958,7 @@ animate={{
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components (unchanged)
+// Sub-components
 // ---------------------------------------------------------------------------
 const tableGridStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(60px, 1fr) 3fr minmax(60px, 1fr)",
@@ -1029,6 +1012,7 @@ function SeatView({
   flipMode,
   score,
   avatarRef,
+  darkSide,
 }: {
   orientation: "horizontal" | "vertical";
   hand: UnoCard[];
@@ -1038,6 +1022,7 @@ function SeatView({
   flipMode?: boolean;
   score: number;
   avatarRef?: (el: HTMLDivElement | null) => void;
+  darkSide?: boolean;
 }) {
   const shown = hand.slice(0, 7);
   const extra = hand.length - shown.length;
@@ -1073,8 +1058,7 @@ function SeatView({
               zIndex: i,
             }}
           >
-            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm"
-            darkSide={game.gameSide === "dark"}   // <-- add this/>
+            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide} />
           </div>
         ))}
         {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
