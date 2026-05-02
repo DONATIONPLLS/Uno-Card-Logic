@@ -97,7 +97,7 @@ export function UnoCardView({
       : "";
 
   if (card.color === "wild") {
-   const wildBg = darkSide ? #1a1a1f#: #ffffff#;
+   const wildBg = darkSide ?#1a1a1f#:#ffffff#;
     return (
       <button
         type="button"
