@@ -39,7 +39,7 @@ export function UnoCardView({
   small,
   highlightColor,
   flipMode,
-  darkSide, // <-- new
+  darkSide,
 }: {
   card: UnoCard;
   onClick?: () => void;
@@ -49,7 +49,7 @@ export function UnoCardView({
   small?: boolean;
   highlightColor?: "red" | "yellow" | "green" | "blue";
   flipMode?: boolean;
-  darkSide?: boolean;  //indicates the game is on the dark side
+  darkSide?: boolean;
 }) {
   if (small && size === "md") size = "sm";
   const s = sizeMap[size];
@@ -97,14 +97,16 @@ export function UnoCardView({
       : "";
 
   if (card.color === "wild") {
-   const wildBg = darkSide ?#1a1a1f#:#ffffff#;
+    const wildBg = darkSide ? "#1a1a1f" : "#ffffff";
     return (
       <button
         type="button"
         onClick={onClick}
         disabled={disabled || !onClick}
-        className={`${s.box} relative rounded-xl border-[3px] border-white overflow-hidden shadow-md transition ${darkSide ? "":"bg-white"} ${disabled ? "opacity-90" : ""} select-none ${ringForChosen}`}
-style={{ background: wildBg }}
+        className={`${s.box} relative rounded-xl border-[3px] border-white overflow-hidden shadow-md transition ${
+          onClick && !disabled ? "active:scale-95" : ""
+        } ${disabled ? "opacity-90" : ""} select-none ${ringForChosen}`}
+        style={{ background: wildBg }}
       >
         <div className="absolute inset-0 flex items-center justify-center">
           <div
