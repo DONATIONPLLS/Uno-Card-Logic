@@ -574,7 +574,15 @@ const onDrawPileTap = () => {
 
   const myHand = game.hands[handViewIdx] ?? [];
   const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
-  const canPass = myTurn && hasDrawnThisTurn && !playableExists && game.pendingAction === null && !isDrawingRef.current;
+const canPass = useMemo(() => {
+  return (
+    myTurn &&
+    hasDrawnThisTurn &&
+    !playableExists &&
+    game.pendingAction === null &&
+    !isDrawingRef.current
+  );
+}, [myTurn, hasDrawnThisTurn, playableExists, game.pendingAction, isDrawingRef.current]);
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
@@ -785,10 +793,17 @@ return (
             <ScoreBadge score={game.scores[handViewIdx] ?? 0} />
             <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
-         {/* Penalty draw button (only when pendingDraw > 0 and no card selected) */}
+          
+        {/* Penalty draw – instantly skip turn */}
 {myTurn && !viewerIsBot && game.pendingDraw > 0 && !selectedId ? (
   <button
-    onClick={() => startDrawAnimation(handViewIdx, game.pendingDraw)}
+    onClick={() => {
+      // Clear any selection + arm state
+      setSelectedId(null);
+      setDrawArmed(false);
+      // Immediately perform the draw + skip in the engine
+      setGame((g) => drawPenaltyThenEnd(g, handViewIdx));
+    }}
     className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(215_85%_45%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
     disabled={isDrawingRef.current}
   >
