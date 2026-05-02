@@ -1,4 +1,5 @@
 import type { UnoCard, CardValue, WildColor } from "@/lib/uno-engine";
+import { flipCard } from "@/lib/uno-engine";   // <-- add import
 
 const cardBg: Record<WildColor, string> = {
   red: "bg-[hsl(0_85%_48%)]",
@@ -54,31 +55,27 @@ export function UnoCardView({
   if (small && size === "md") size = "sm";
   const s = sizeMap[size];
 
+  // ── Uno Flip face‑down → show opposite side, not Uno logo ──
+  if (faceDown && flipMode) {
+    const flipped = card.id === "back" ? card : flipCard(card);
+    return (
+      <div
+        className={`${s.box} rounded-xl border-[3px] border-white/30 flex items-center justify-center shadow-md select-none overflow-hidden relative ${darkSide ? "card-dark-flip" : ""}`}
+        style={{ background: darkSide ? "#1a1a1f" : "#ffffff" }}
+      >
+        {/* Render the flipped card face‑up */}
+        <UnoCardView
+          card={flipped}
+          size={size}
+          flipMode={false}   // prevent infinite recursion
+          darkSide={darkSide}
+        />
+      </div>
+    );
+  }
+
+  // Normal face‑down (standard mode)
   if (faceDown) {
-    if (flipMode) {
-      return (
-        <div
-          className={`${s.box} rounded-xl border-[3px] border-white/30 flex items-center justify-center shadow-md select-none overflow-hidden relative`}
-          style={{
-            background:
-              "linear-gradient(135deg, #1a1a1f 0%, #2a2a30 50%, #0e0e12 100%)",
-          }}
-        >
-          <div
-            className={`${s.back} rounded-full -rotate-12 flex items-center justify-center`}
-            style={{
-              background:
-                "linear-gradient(135deg, #0a0a0a 0%, #25252a 100%)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <span className="text-white/85 font-black italic tracking-tight leading-none drop-shadow-[0_0_2px_rgba(0,0,0,1)]">
-              UNO
-            </span>
-          </div>
-        </div>
-      );
-    }
     return (
       <div
         className={`${s.box} rounded-xl bg-[hsl(0_75%_18%)] border-[3px] border-white flex items-center justify-center shadow-md select-none overflow-hidden`}
@@ -103,7 +100,7 @@ export function UnoCardView({
         type="button"
         onClick={onClick}
         disabled={disabled || !onClick}
-        className={`${s.box} relative rounded-xl border-[3px] border-white overflow-hidden shadow-md transition ${
+        className={`${s.box} relative rounded-xl border-[3px] border-white overflow-hidden shadow-md transition ${darkSide ? "card-dark-flip" : ""} ${
           onClick && !disabled ? "active:scale-95" : ""
         } ${disabled ? "opacity-90" : ""} select-none ${ringForChosen}`}
         style={{ background: wildBg }}
@@ -134,7 +131,7 @@ export function UnoCardView({
       type="button"
       onClick={onClick}
       disabled={disabled || !onClick}
-      className={`${s.box} relative rounded-xl border-[3px] border-white shadow-md transition ${cardBg[card.color]} ${
+      className={`${s.box} relative rounded-xl border-[3px] border-white shadow-md transition ${cardBg[card.color]} ${darkSide ? "card-dark-flip" : ""} ${
         onClick && !disabled ? "active:scale-95" : ""
       } ${disabled ? "opacity-90" : ""} select-none`}
     >
