@@ -8,18 +8,17 @@
  * extends edge-to-edge because root has NO padding.
  */
 @layer utilities {
-  .pt-safe {
-    padding-top: env(safe-area-inset-top);
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pt-safe-header { padding-top: max(env(safe-area-inset-top), 0.5rem); }
+
+  /* Card‑specific flip visual – only affects colours, no full‑board inversion */
+  .card-dark-flip {
+    filter: invert(0.9) hue-rotate(180deg) saturate(1.5) brightness(1.2);
   }
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  /* Use on headers that need ≥ safe-area-top + their own padding */
-  .pt-safe-header {
-    padding-top: max(env(safe-area-inset-top), 0.5rem);
-  }
-   .dark-flip {
- filter: invert(0.9) hue-rotate(180deg) saturate(1.5) brightness(1.2);
+  /* For wild cards on dark side – makes background dark */
+  .wild-dark {
+    background: #1a1a1f !important;
   }
 }
 
