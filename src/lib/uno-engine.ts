@@ -77,7 +77,7 @@ export function cardPointValue(c: UnoCard): number {
 // ── Uno Flip symmetric card mapping (involution) ──
 // Each light card has a dark counterpart and vice‑versa.
 // Apply this function after flipping to transform the whole game state.
-function flipCard(c: UnoCard): UnoCard {
+export function flipCard(c: UnoCard): UnoCard {
   if (c.value === "flip") return c;               // Flip cards don't change
 
   // Wilds stay wild but can change *which* wild (only if mapping says so)
