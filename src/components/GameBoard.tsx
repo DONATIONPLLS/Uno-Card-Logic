@@ -212,7 +212,7 @@ const processBotTurn = useCallback(() => {
           lastCard &&
           isValidMove(
             lastCard,
-            prev.discardPile[prev.discardPile.length - 1],
+            prev.[prev..length - 1],
             prev.activeColor,
             prev.pendingDraw,
             prev.houseRules,
@@ -248,14 +248,14 @@ const processBotTurn = useCallback(() => {
   const currentPlayer = game.players[currentIdx];
   const myTurn = handViewIdx === currentIdx && game.winner === null;
   const isHumanTurn = currentPlayer?.kind === "human" && game.winner === null;
-  const top = game.discardPile[game.discardPile.length - 1];
+  const top = game.[game..length - 1];
   const upNextIdx = nextPlayer(game);
   const upNext = game.players[upNextIdx];
   const viewerPlayer = game.players[handViewIdx];
   const viewerIsBot = viewerPlayer?.kind === "bot";
   const visibleTop =
-    suppressedTopId && suppressedTopId === top.id && game.discardPile.length >= 2
-      ? game.discardPile[game.discardPile.length - 2]
+    suppressedTopId && suppressedTopId === top.id && game..length >= 2
+      ? game.[game..length - 2]
       : top;
 
   const act: GameActions = actions ?? {
@@ -287,8 +287,8 @@ const processBotTurn = useCallback(() => {
       const delta = after - before;
       const seat = seatRefs.current[i];
 
-      if (delta === -1 && game.discardPile.length === prev.discardPile.length + 1) {
-        const playedCard = game.discardPile[game.discardPile.length - 1];
+      if (delta === -1 && game..length === prev..length + 1) {
+        const playedCard = game.[game..length - 1];
         const dst = discardRef.current;
         if (!dst || !playedCard) return;
         const d = dst.getBoundingClientRect();
@@ -613,7 +613,7 @@ const canPass = useMemo(() => {
 
 return (
   <div
-    className={`min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out] ${darkFilter}`}
+    className={`min-h-screen w-full flex flex-col text-white animate-[fadeIn_.22s_ease-out]`}
     style={{ background: tableBg }}
   >
       
@@ -677,6 +677,7 @@ return (
               flipMode={flipMode}
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
+              darkSide={game.gameSide === "dark"}   // <-- add this
             />
           ) : null}
         </div>
@@ -691,6 +692,7 @@ return (
               flipMode={flipMode}
               score={game.scores[seatAt("left")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
+              darkSide={game.gameSide === "dark"}   // <-- add this
             />
           ) : null}
         </div>
@@ -705,6 +707,7 @@ return (
               flipMode={flipMode}
               score={game.scores[seatAt("right")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
+              darkSide={game.gameSide === "dark"}   // <-- add this
             />
           ) : null}
         </div>
@@ -734,6 +737,7 @@ return (
                 faceDown
                 flipMode={flipMode}
                 size="md"
+                darkSide={game.gameSide === "dark"}   // <-- add this
               />
             </div>
             <span className="text-[10px] text-white/70">
@@ -743,7 +747,8 @@ return (
 
 <div className="flex flex-col items-center gap-1">
   <motion.div ref={discardRef} key={visibleTop.id}>
-    <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} />
+    <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} 
+    darkSide={game.gameSide === "dark"}   // <-- add this/>
   </motion.div>
   <span className="text-[10px] text-white/60">Top</span>
 </div>
@@ -872,6 +877,7 @@ return (
                         faceDown={showFaceDown}
                         flipMode={flipMode}
                         size="lg"
+                        darkSide={game.gameSide === "dark"}   // <-- add this
                       />
                     </div>
                   </motion.div>
@@ -907,7 +913,8 @@ animate={{
 }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
           >
-            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" />
+            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" 
+            darkSide={game.gameSide === "dark"}   // <-- add this/>
           </motion.div>
         ))}
       </div>
@@ -1066,7 +1073,8 @@ function SeatView({
               zIndex: i,
             }}
           >
-            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" />
+            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm"
+            darkSide={game.gameSide === "dark"}   // <-- add this/>
           </div>
         ))}
         {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
