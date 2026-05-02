@@ -12,7 +12,7 @@ import {
   nextPlayer,
   playCard,
   resolveSwap,
-  drawPenaltyThenEnd, // <-- added for immediate penalty skip
+  drawPenaltyThenEnd,
   type GameState,
   type UnoCard,
   type UnoColor,
@@ -89,6 +89,7 @@ export function GameBoard({
   const flipMode = game.mode === "flip";
 
   const pendingPlayFlight = useRef(false);
+  const [isDrawing, setIsDrawing] = useState(false);            // <-- reactive
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickColorFor, setPickColorFor] = useState<string | null>(null);
@@ -120,15 +121,14 @@ export function GameBoard({
   const gameRef = useRef<GameState | null>(game);
   gameRef.current = game;
 
-  const isDrawingRef = useRef(false);
   const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper: start the staggered draw animation
   const startDrawAnimation = useCallback(
     (playerIdx: number, numCards: number, onComplete?: () => void) => {
-      if (isDrawingRef.current) return;
-      isDrawingRef.current = true;
+      if (isDrawing) return;
+      setIsDrawing(true);
 
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
 
@@ -174,7 +174,7 @@ export function GameBoard({
 
           if (currentIndex === numCards - 1) {
             setTimeout(() => {
-              isDrawingRef.current = false;
+              setIsDrawing(false);
               onComplete?.();
             }, 40);
           }
@@ -188,12 +188,12 @@ export function GameBoard({
 
       launchOne();
     },
-    [handViewIdx, setFlights, setGame],
+    [handViewIdx, isDrawing, setFlights, setGame],
   );
 
   const processBotTurn = useCallback(() => {
     const g = gameRef.current;
-    if (!g || g.winner || g.pendingAction || isDrawingRef.current) return;
+    if (!g || g.winner || g.pendingAction || isDrawing) return;
     if (g.players[g.currentPlayer]?.kind !== "bot") return;
 
     const move = chooseBotMove(g, g.currentPlayer);
@@ -235,7 +235,7 @@ export function GameBoard({
         playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor),
       );
     }
-  }, [startDrawAnimation, setGame]);
+  }, [startDrawAnimation, setGame, isDrawing]);
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
@@ -258,7 +258,7 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-  // ── Card flight animations (play only, draws handled by staggered) ──
+  // ── Card flight animations (play only) ──
   useEffect(() => {
     const prev = prevGameRef.current;
     prevGameRef.current = game;
@@ -375,7 +375,7 @@ export function GameBoard({
       setOverlayKind(null);
       return;
     }
-    if (isDrawingRef.current) return;
+    if (isDrawing) return;
 
     const prev = prevTurnRef.current;
     if (prev === currentIdx) return;
@@ -394,7 +394,7 @@ export function GameBoard({
     } else {
       setRevealed(false); setOverlayKind("pass");
     }
-  }, [currentIdx, game.players, game.winner, isPassAndPlay]);
+  }, [currentIdx, game.players, game.winner, isPassAndPlay, isDrawing]);
 
   useEffect(() => {
     if (revealed && currentPlayer?.kind === "human") {
@@ -434,7 +434,7 @@ export function GameBoard({
 
   // ── Bot loop ──
   useEffect(() => {
-    if (!enableBots || game.winner || isDrawingRef.current || pendingPlayFlight.current) return;
+    if (!enableBots || game.winner || isDrawing || pendingPlayFlight.current) return;
     const current = game.players[game.currentPlayer];
     if (!current || current.kind !== "bot") return;
 
@@ -443,7 +443,7 @@ export function GameBoard({
     return () => {
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
     };
-  }, [game.currentPlayer, game.winner, enableBots, pendingPlayFlight.current, processBotTurn]);
+  }, [game.currentPlayer, game.winner, enableBots, pendingPlayFlight.current, processBotTurn, isDrawing]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -509,7 +509,7 @@ export function GameBoard({
 
   const onDrawPileTap = () => {
     if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-    if (isDrawingRef.current) return;
+    if (isDrawing) return;
 
     if (selectedId) {
       setSelectedId(null);
@@ -528,12 +528,15 @@ export function GameBoard({
     const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
     setDrawArmed(false);
     setHasDrawnThisTurn(true);
-    startDrawAnimation(handViewIdx, cardsToDraw, () => {
-      isDrawingRef.current = false;
-      if (game.pendingDraw > 0) {
-        act.endTurn();
-      }
-    });
+    if (game.pendingDraw > 0) {
+      // Penalty draw – animate, then skip turn
+      startDrawAnimation(handViewIdx, cardsToDraw, () => {
+        setGame((g) => drawPenaltyThenEnd(g, handViewIdx));
+      });
+    } else {
+      // Normal draw – just animate, no auto‑skip
+      startDrawAnimation(handViewIdx, cardsToDraw);
+    }
   };
 
   const onPass = () => {
@@ -569,9 +572,9 @@ export function GameBoard({
       hasDrawnThisTurn &&
       !playableExists &&
       game.pendingAction === null &&
-      !isDrawingRef.current
+      !isDrawing
     );
-  }, [myTurn, hasDrawnThisTurn, playableExists, game.pendingAction, isDrawingRef.current]);
+  }, [myTurn, hasDrawnThisTurn, playableExists, game.pendingAction, isDrawing]);
 
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
@@ -598,6 +601,8 @@ export function GameBoard({
     if (idx === upNextIdx && currentIdx !== idx) return "next";
     return "idle";
   };
+
+  const darkSide = game.gameSide === "dark";
 
   return (
     <div
@@ -664,7 +669,7 @@ export function GameBoard({
               flipMode={flipMode}
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
-              darkSide={game.gameSide === "dark"}
+              darkSide={darkSide}
             />
           ) : null}
         </div>
@@ -679,7 +684,7 @@ export function GameBoard({
               flipMode={flipMode}
               score={game.scores[seatAt("left")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
-              darkSide={game.gameSide === "dark"}
+              darkSide={darkSide}
             />
           ) : null}
         </div>
@@ -694,7 +699,7 @@ export function GameBoard({
               flipMode={flipMode}
               score={game.scores[seatAt("right")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
-              darkSide={game.gameSide === "dark"}
+              darkSide={darkSide}
             />
           ) : null}
         </div>
@@ -710,10 +715,11 @@ export function GameBoard({
               !revealed ||
               hasDrawnThisTurn ||
               game.pendingAction !== null ||
-              viewerIsBot
+              viewerIsBot ||
+              isDrawing
             }
             className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot
+              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot && !isDrawing
                 ? "active:scale-95"
                 : "opacity-70"
             } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
@@ -724,7 +730,7 @@ export function GameBoard({
                 faceDown
                 flipMode={flipMode}
                 size="md"
-                darkSide={game.gameSide === "dark"}
+                darkSide={darkSide}
               />
             </div>
             <span className="text-[10px] text-white/70">
@@ -734,7 +740,7 @@ export function GameBoard({
 
           <div className="flex flex-col items-center gap-1">
             <motion.div ref={discardRef} key={visibleTop.id}>
-              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={game.gameSide === "dark"} />
+              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide} />
             </motion.div>
             <span className="text-[10px] text-white/60">Top</span>
           </div>
@@ -785,16 +791,18 @@ export function GameBoard({
             <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
 
-          {/* Penalty draw – instantly skip turn */}
-          {myTurn && !viewerIsBot && game.pendingDraw > 0 && !selectedId ? (
+          {/* Penalty draw – animate, then skip turn */}
+          {myTurn && !viewerIsBot && game.pendingDraw > 0 && !selectedId && !isDrawing ? (
             <button
               onClick={() => {
                 setSelectedId(null);
                 setDrawArmed(false);
-                setGame((g) => drawPenaltyThenEnd(g, handViewIdx));
+                setHasDrawnThisTurn(true); // prevent further draws
+                startDrawAnimation(handViewIdx, game.pendingDraw, () => {
+                  setGame((g) => drawPenaltyThenEnd(g, handViewIdx));
+                });
               }}
               className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(215_85%_45%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
-              disabled={isDrawingRef.current}
             >
               Draw {game.pendingDraw}
             </button>
@@ -861,7 +869,7 @@ export function GameBoard({
                         faceDown={showFaceDown}
                         flipMode={flipMode}
                         size="lg"
-                        darkSide={game.gameSide === "dark"}
+                        darkSide={darkSide}
                       />
                     </div>
                   </motion.div>
@@ -897,7 +905,7 @@ export function GameBoard({
             }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
           >
-            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" darkSide={game.gameSide === "dark"} />
+            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" darkSide={darkSide} />
           </motion.div>
         ))}
       </div>
