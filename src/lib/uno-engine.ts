@@ -462,6 +462,27 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
   return s;
 }
 
+/**
+ * Draw the pending penalty cards and immediately end the player's turn.
+ * This mirrors the official rule: the victim draws and is skipped.
+ */
+export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
+  // Draw the required cards (same logic as drawOne but we force endTurn)
+  let s = cloneState(state);
+  if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
+
+  const drawn = Math.max(1, s.pendingDraw);
+  s = drawCards(s, playerIdx, drawn);
+  s.pendingDraw = 0;
+
+  // Log the draw
+  s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
+
+  // Now skip the player
+  s.currentPlayer = nextPlayer(s);
+  return s;
+}
+
 export type BotMove =
   | { type: "play"; cardId: string; chosenColor?: UnoColor }
   | { type: "draw" };
