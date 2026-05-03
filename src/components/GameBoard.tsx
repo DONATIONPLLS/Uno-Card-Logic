@@ -1,5 +1,5 @@
 // src/components/GameBoard.tsx
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   chooseBotMove,
@@ -534,7 +534,6 @@ export function GameBoard({
   }, [game.pendingAction, handViewIdx, revealed, viewerIsBot]);
 
   const myHand = game.hands[handViewIdx] ?? [];
-  const playableExists = myTurn && !viewerIsBot && hasPlayableCard(game, handViewIdx);
 
   const canEndTurn =
     myTurn &&
