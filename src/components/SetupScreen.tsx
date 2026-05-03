@@ -209,6 +209,12 @@ export function SetupScreen({
                 value={rules.allWild}
                 onChange={(v) => setRules({ ...rules, allWild: v })}
               />
+              <Toggle
+  label="Same‑card combo"
+  hint="After playing a card, you can play another identical card (except wilds)"
+  value={rules.sameCardCombo}
+  onChange={(v) => setRules({ ...rules, sameCardCombo: v })}
+/>
             </div>
           </section>
         ) : (
