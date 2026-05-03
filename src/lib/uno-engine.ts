@@ -588,5 +588,6 @@ function cloneState(s: GameState): GameState {
     log: [...s.log],
     winner: s.winner,
     scores: [...s.scores],
+    skipNext: s.skipNext,   // ← add this
   };
 }
