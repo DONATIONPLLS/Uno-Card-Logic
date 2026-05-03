@@ -1,15 +1,21 @@
-export type UnoColor = "red" | "yellow" | "green" | "blue";
-export type WildColor = UnoColor | "wild";
+export type UnoColor = "red" | "yellow" | "green" | "blue" | "pink" | "teal" | "orange" | "purple";
+// ... existing code ...
 
 export type CardValue =
   | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-  | "skip" | "reverse" | "draw2" | "wild" | "wild4" | "flip";
+  | "skip" | "reverse" | "draw2" | "wild" | "wild4" | "flip"
+  | "draw1" | "wild_draw2"    // light side only
+  | "draw_to_color"            // dark side only
+  | "skip_all";                // dark side only
 
 export interface UnoCard {
   id: string;
   color: WildColor;
   value: CardValue;
+  darkId?: string;   // ID of the paired dark‑side card (if any)
 }
+export type WildColor = UnoColor | "wild";
+
 
 export type PlayerKind = "human" | "bot";
 
@@ -25,7 +31,9 @@ export interface HouseRules {
   drawUntilPlayable: boolean;
   sevenZero: boolean;
   allWild: boolean;
+  sameCardCombo: boolean;   // new
 }
+
 
 export const DEFAULT_HOUSE_RULES: HouseRules = {
   stackDraws: true,
@@ -34,6 +42,7 @@ export const DEFAULT_HOUSE_RULES: HouseRules = {
   drawUntilPlayable: false,
   sevenZero: false,
   allWild: false,
+  sameCardCombo: false,
 };
 
 export type GameMode = "standard" | "chaos" | "flip" | "allwild" | "custom";
@@ -44,6 +53,7 @@ export const MODE_PRESETS: Record<Exclude<GameMode, "custom">, HouseRules> = {
   flip: { ...DEFAULT_HOUSE_RULES, stackDraws: true, jumpIn: true, forcePlay: true },
   allwild: { ...DEFAULT_HOUSE_RULES, allWild: true },
 };
+// sameCardCombo stays false – only toggleable in custom.
 
 export interface PendingSwap {
   type: "swap7";
@@ -67,7 +77,9 @@ export interface GameState {
   winner: number | null;
   scores: number[];
   skipNext: boolean;
+  flipMap: Record<string, UnoCard>; //new
 }
+
 
 export function cardPointValue(c: UnoCard): number {
   if (c.value === "wild" || c.value === "wild4") return 50;
@@ -78,44 +90,12 @@ export function cardPointValue(c: UnoCard): number {
 // ── Uno Flip symmetric card mapping (involution) ──
 // Each light card has a dark counterpart and vice‑versa.
 // Apply this function after flipping to transform the whole game state.
-export function flipCard(c: UnoCard): UnoCard {
-  if (c.value === "flip") return c;               // Flip cards don't change
-
-  // Wilds stay wild but can change *which* wild (only if mapping says so)
-  if (c.color === "wild") {
-    // Wild and Wild+4 keep their values; color remains "wild"
-    return { ...c, color: "wild", value: c.value };
+export function flipCard(card: UnoCard, flipMap: Record<string, UnoCard>): UnoCard {
+  if (card.darkId && flipMap[card.darkId]) {
+    return flipMap[card.darkId];
   }
-
-  // ── Map colour ──
-  const colorMap: Record<UnoColor, UnoColor> = {
-    red: "blue",
-    yellow: "green",
-    green: "yellow",
-    blue: "red",
-  };
-
-  // ── Map number 0‑9 ──
-  const numMap: Record<string, string> = {
-    "0": "0", "1": "9", "2": "8", "3": "7", "4": "6",
-    "5": "5", "6": "4", "7": "3", "8": "2", "9": "1",
-  };
-
-  if (c.value >= "0" && c.value <= "9") {
-    return {
-      ...c,
-      color: colorMap[c.color as UnoColor],
-      value: numMap[c.value] as CardValue,
-    };
-  }
-
-  // ── Action cards (skip, reverse, draw2) keep the same action, change color ──
-  if (c.value === "skip" || c.value === "reverse" || c.value === "draw2") {
-    return { ...c, color: colorMap[c.color as UnoColor] };
-  }
-
-  // Fallback – should never happen
-  return c;
+  // fallback – should not happen, but keep it safe
+  return { ...card, color: "wild", value: "wild" };
 }
 
 export function tallyRoundScore(state: GameState, winnerIdx: number): number {
@@ -133,36 +113,107 @@ const ACTIONS: CardValue[] = ["skip", "reverse", "draw2"];
 let idCounter = 0;
 const nextId = () => `c${++idCounter}`;
 
-// Update the function signature to accept the mode
-export function buildDeck(mode: GameMode, allWild = false): UnoCard[] {
-  const deck: UnoCard[] = [];
+export function buildDeck(mode: GameMode, allWild = false): { lightDeck: UnoCard[]; darkDeck: UnoCard[]; flipMap: Record<string, UnoCard> } {
+  const light: UnoCard[] = [];
+  const dark: UnoCard[] = [];
   if (allWild) {
-    for (let i = 0; i < 36; i++) deck.push({ id: nextId(), color: "wild", value: "wild" });
-    for (let i = 0; i < 24; i++) deck.push({ id: nextId(), color: "wild", value: "wild4" });
-    return deck;
+    // All‑wild mode – both sides identical wild/wild4
+    for (let i = 0; i < 36; i++) {
+      const l = { id: nextId(), color: "wild", value: "wild" };
+      const d = { id: nextId(), color: "wild", value: "wild" };
+      l.darkId = d.id; d.darkId = l.id;
+      light.push(l); dark.push(d);
+    }
+    for (let i = 0; i < 24; i++) {
+      const l = { id: nextId(), color: "wild", value: "wild4" };
+      const d = { id: nextId(), color: "wild", value: "wild4" };
+      l.darkId = d.id; d.darkId = l.id;
+      light.push(l); dark.push(d);
+    }
+    // build flipMap
+    const flipMap: Record<string, UnoCard> = {};
+    for (const c of [...light, ...dark]) {
+      if (c.darkId) flipMap[c.id] = [...light, ...dark].find(x => x.id === c.darkId)!;
+    }
+    return { lightDeck: light, darkDeck: dark, flipMap };
   }
-  for (const color of COLORS) {
-    deck.push({ id: nextId(), color, value: "0" });
-    for (const n of NUMBERS.slice(1)) {
-      deck.push({ id: nextId(), color, value: n });
-      deck.push({ id: nextId(), color, value: n });
-    }
-    for (const a of ACTIONS) {
-      deck.push({ id: nextId(), color, value: a });
-      deck.push({ id: nextId(), color, value: a });
-    }
-    
-    // ONLY add Flip cards if we are actually playing Uno Flip!
-    if (mode === "flip") {
-      deck.push({ id: nextId(), color, value: "flip" });
-      deck.push({ id: nextId(), color, value: "flip" });
-    }
-  }
+
+  const COLORS_LIGHT: UnoColor[] = ["red", "yellow", "green", "blue"];
+  const COLORS_DARK: UnoColor[] = ["pink", "teal", "orange", "purple"];
+
   for (let i = 0; i < 4; i++) {
-    deck.push({ id: nextId(), color: "wild", value: "wild" });
-    deck.push({ id: nextId(), color: "wild", value: "wild4" });
+    const lc = COLORS_LIGHT[i];
+    const dc = COLORS_DARK[i];
+
+    // Number 0
+    light.push({ id: nextId(), color: lc, value: "0" });
+    dark.push({ id: nextId(), color: dc, value: "0" });
+
+    // Numbers 1-9 (two of each)
+    for (const n of [1,2,3,4,5,6,7,8,9]) {
+      for (let dup = 0; dup < 2; dup++) {
+        const nStr = n.toString() as CardValue;
+        light.push({ id: nextId(), color: lc, value: nStr });
+        dark.push({ id: nextId(), color: dc, value: nStr });
+      }
+    }
+
+    // Action cards: skip, reverse, draw2 (two of each)
+    for (const v of ["skip","reverse","draw2"] as CardValue[]) {
+      for (let dup = 0; dup < 2; dup++) {
+        light.push({ id: nextId(), color: lc, value: v });
+        dark.push({ id: nextId(), color: dc, value: v });
+      }
+    }
+
+    // Light‑only cards: draw1 (coloured +1) – two per colour
+    for (let dup = 0; dup < 2; dup++) {
+      light.push({ id: nextId(), color: lc, value: "draw1" });
+    }
+
+    // Dark‑only cards: draw_to_color, skip_all – two per colour
+    for (let dup = 0; dup < 2; dup++) {
+      dark.push({ id: nextId(), color: dc, value: "draw_to_color" });
+      dark.push({ id: nextId(), color: dc, value: "skip_all" });
+    }
+
+    // Flip cards – two per colour
+    if (mode === "flip") {
+      for (let dup = 0; dup < 2; dup++) {
+        light.push({ id: nextId(), color: lc, value: "flip" });
+        dark.push({ id: nextId(), color: dc, value: "flip" });
+      }
+    }
   }
-  return deck;
+
+  // Wilds (light) and Wild4 (light)
+  for (let i = 0; i < 4; i++) {
+    light.push({ id: nextId(), color: "wild", value: "wild" });
+    dark.push({ id: nextId(), color: "wild", value: "wild" });
+    light.push({ id: nextId(), color: "wild", value: "wild4" });
+    dark.push({ id: nextId(), color: "wild", value: "wild4" });
+  }
+
+  // Light‑only wild_draw2 (wild draw 2 – all colours)
+  for (let i = 0; i < 4; i++) {
+    light.push({ id: nextId(), color: "wild", value: "wild_draw2" });
+  }
+
+  // Pair them 1:1 by index (shuffle will be applied later in dealNewGame)
+  if (light.length !== dark.length) {
+    throw new Error("Light and dark decks must have the same number of cards");
+  }
+  const flipMap: Record<string, UnoCard> = {};
+  for (let idx = 0; idx < light.length; idx++) {
+    const l = light[idx];
+    const d = dark[idx];
+    l.darkId = d.id;
+    d.darkId = l.id;
+    flipMap[l.id] = d;
+    flipMap[d.id] = l;
+  }
+
+  return { lightDeck: light, darkDeck: dark, flipMap };
 }
 
 export function shuffle<T>(arr: T[]): T[] {
@@ -205,11 +256,12 @@ export function isValidMove(
   return false;
 }
 
-  // ── Normal turn ──
-  if (card.color === "wild") return true;
-  if (card.color === activeColor) return true;
-  if (card.value === topCard.value) return true;
-  return false;
+ // Normal turn
+if (card.color === "wild") return true;
+if (card.color === activeColor) return true;
+if (card.value === topCard.value) return true;
+// allow draw1, wild_draw2, draw_to_color, skip_all
+if (card.value === "draw1" || card.value === "wild_draw2" || card.value === "draw_to_color" || card.value === "skip_all") return true;
 }
 
 export interface NewGameOptions {
@@ -221,9 +273,22 @@ export interface NewGameOptions {
 
 export function dealNewGame(opts: NewGameOptions): GameState {
   const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
+
+  // Shuffle the light deck (we don't need darkDeck after mapping is built)
+  let deck = shuffle(lightDeck);
+  // ... rest of the function unchanged, but add flipMap to the returned state
+
+  return {
+    // ... existing fields
+    flipMap,
+  };
+}
+
+export function dealNewGame(opts: NewGameOptions): GameState {
+  const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
   const players = opts.players;
-  // Pass the mode into the deck builder!
-  let deck = shuffle(buildDeck(opts.mode ?? "standard", houseRules.allWild));
+  const { lightDeck, flipMap } = buildDeck(opts.mode ?? "standard", houseRules.allWild);
+  let deck = shuffle(lightDeck);
   const hands: UnoCard[][] = [];
   for (let p = 0; p < players.length; p++) {
     hands.push(deck.splice(0, 7));
@@ -260,6 +325,7 @@ export function dealNewGame(opts: NewGameOptions): GameState {
         ? [...opts.previousScores]
         : new Array(players.length).fill(0),
     skipNext: false,
+    flipMap,
   };
 }
 
@@ -333,11 +399,11 @@ export function playCard(
   }
 
   if (card.value === "flip") {
-    s.gameSide = s.gameSide === "light" ? "dark" : "light";
-    s.discardPile = s.discardPile.map(flipCard);
-    s.drawPile = s.drawPile.map(flipCard);
-    s.hands = s.hands.map((hand) => hand.map(flipCard));
-    s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
+  s.gameSide = s.gameSide === "light" ? "dark" : "light";
+  s.discardPile = s.discardPile.map(c => flipCard(c, s.flipMap));
+  s.drawPile = s.drawPile.map(c => flipCard(c, s.flipMap));
+  s.hands = s.hands.map(hand => hand.map(c => flipCard(c, s.flipMap)));
+  s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
   }
 
   if (hand.length === 0) {
@@ -588,6 +654,8 @@ function cloneState(s: GameState): GameState {
     log: [...s.log],
     winner: s.winner,
     scores: [...s.scores],
-    skipNext: s.skipNext,   // ← add this
+    skipNext: s.skipNext,  // ← add this
+    // inside cloneState
+    flipMap: { ...s.flipMap },
   };
 }
