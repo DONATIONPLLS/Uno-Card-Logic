@@ -487,7 +487,7 @@ export function GameBoard({
     act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
-    setHasPlayedThisTurn(true);
+    set(true);
   };
 
   const onPass = () => {
