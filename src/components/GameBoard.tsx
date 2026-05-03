@@ -28,6 +28,10 @@ const colorSwatch: Record<UnoColor, string> = {
   yellow: "bg-[hsl(48_100%_50%)]",
   green: "bg-[hsl(140_70%_38%)]",
   blue: "bg-[hsl(215_85%_45%)]",
+  pink: "bg-[hsl(330_75%_55%)]",
+  teal: "bg-[hsl(180_60%_45%)]",
+  orange: "bg-[hsl(30_90%_55%)]",
+  purple: "bg-[hsl(270_70%_50%)]",
 };
 
 const impactHex: Record<UnoColor, string> = {
@@ -35,6 +39,10 @@ const impactHex: Record<UnoColor, string> = {
   yellow: "#facc15",
   green: "#22c55e",
   blue: "#3b82f6",
+  pink: "#f472b6",
+  teal: "#2dd4bf",
+  orange: "#fb923c",
+  purple: "#a78bfa",
 };
 
 type SeatPos = "top" | "left" | "right";
@@ -487,7 +495,7 @@ export function GameBoard({
     act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
-    set(true);
+    Set(true);
   };
 
   const onPass = () => {
@@ -640,6 +648,7 @@ export function GameBoard({
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
               darkSide={backDarkSide}
+              flipMap={game.flipMap} 
             />
           ) : null}
         </div>
@@ -655,6 +664,7 @@ export function GameBoard({
               score={game.scores[seatAt("left")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
               darkSide={backDarkSide}
+              flipMap={game.flipMap} 
             />
           ) : null}
         </div>
@@ -670,6 +680,7 @@ export function GameBoard({
               score={game.scores[seatAt("right")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
               darkSide={backDarkSide}
+              flipMap={game.flipMap} 
             />
           ) : null}
         </div>
@@ -702,6 +713,7 @@ export function GameBoard({
                 flipMode={flipMode}
                 size="md"
                 darkSide={backDarkSide}
+                flipMap={game.flipMap} 
               />
             </div>
             <span className="text-[10px] text-white/70">
@@ -711,7 +723,8 @@ export function GameBoard({
 
           <div className="flex flex-col items-center gap-1">
             <motion.div ref={discardRef} key={visibleTop.id}>
-              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide} />
+              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide} 
+              flipMap={game.flipMap} />
             </motion.div>
             <span className="text-[10px] text-white/60">Top</span>
           </div>
@@ -830,6 +843,7 @@ export function GameBoard({
                         flipMode={flipMode}
                         size="lg"
                         darkSide={darkSide}
+                        flipMap={game.flipMap} 
                       />
                     </div>
                   </motion.div>
@@ -865,7 +879,8 @@ export function GameBoard({
             }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
           >
-            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" darkSide={darkSide} />
+            <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" darkSide={darkSide}
+            flipMap={game.flipMap} />
           </motion.div>
         ))}
       </div>
@@ -981,6 +996,7 @@ function SeatView({
   score,
   avatarRef,
   darkSide,
+  flipMap,
 }: {
   orientation: "horizontal" | "vertical";
   hand: UnoCard[];
@@ -1026,7 +1042,8 @@ function SeatView({
               zIndex: i,
             }}
           >
-            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide} />
+            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide}
+            flipMap={game.flipMap} />
           </div>
         ))}
         {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
