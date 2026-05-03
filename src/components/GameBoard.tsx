@@ -6,7 +6,6 @@ import {
   chooseBotSwapTarget,
   drawOne,
   endTurn,
-  hasPlayableCard,
   isValidMove,
   nameOf,
   nextPlayer,
