@@ -66,6 +66,7 @@ export interface GameState {
   log: string[];
   winner: number | null;
   scores: number[];
+  skipNext: boolean;
 }
 
 export function cardPointValue(c: UnoCard): number {
@@ -254,6 +255,7 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     pendingAction: null,
     log: [`Game started. Top card: ${describe(first)}.`, `${nameOf(players[0])} starts.`],
     winner: null,
+    skipNext: false,
     scores:
       opts.previousScores && opts.previousScores.length === players.length
         ? [...opts.previousScores]
@@ -330,16 +332,13 @@ export function playCard(
     s.log.unshift(`${nameOf(s.players[playerIdx])} chose ${s.activeColor}.`);
   }
 
- // Uno Flip: transform all cards to the opposite side
- // Uno Flip: transform all cards to the opposite side
-if (card.value === "flip") {
-  s.gameSide = s.gameSide === "light" ? "dark" : "light";
-  // Flip all cards in the game
-  s.discardPile = s.discardPile.map(flipCard);
-  s.drawPile = s.drawPile.map(flipCard);
-  s.hands = s.hands.map((hand) => hand.map(flipCard));
-  s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
-}
+  if (card.value === "flip") {
+    s.gameSide = s.gameSide === "light" ? "dark" : "light";
+    s.discardPile = s.discardPile.map(flipCard);
+    s.drawPile = s.drawPile.map(flipCard);
+    s.hands = s.hands.map((hand) => hand.map(flipCard));
+    s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
+  }
 
   if (hand.length === 0) {
     s.winner = playerIdx;
@@ -385,9 +384,12 @@ if (card.value === "flip") {
     );
     return s;
   }
-  s.currentPlayer = nextPlayer(s, skipNext);
-    return s;
+
+  // Do NOT advance turn here; set skipNext flag for later use by endTurn
+  s.skipNext = skipNext;
+  return s;
 }
+
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
   if (state.pendingAction?.type !== "swap7") return state;
@@ -454,11 +456,18 @@ export function drawSingle(state: GameState, playerIdx: number): GameState {
   return s;
 }
 
+
+// Modify endTurn to use skipNext
 export function endTurn(state: GameState, playerIdx: number): GameState {
   if (state.winner !== null || state.pendingAction !== null) return state;
   if (playerIdx !== state.currentPlayer) return state;
   const s = cloneState(state);
-  s.currentPlayer = nextPlayer(s);
+  if (s.skipNext) {
+    s.currentPlayer = nextPlayer(s, true);   // skip one player
+    s.skipNext = false;
+  } else {
+    s.currentPlayer = nextPlayer(s);
+  }
   return s;
 }
 
