@@ -255,11 +255,11 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     pendingAction: null,
     log: [`Game started. Top card: ${describe(first)}.`, `${nameOf(players[0])} starts.`],
     winner: null,
-    skipNext: false,
     scores:
       opts.previousScores && opts.previousScores.length === players.length
         ? [...opts.previousScores]
         : new Array(players.length).fill(0),
+    skipNext: false,
   };
 }
 
