@@ -704,9 +704,8 @@ function cloneState(s: GameState): GameState {
     log: [...s.log],
     winner: s.winner,
     scores: [...s.scores],
-    skipNext: s.skipNext,  // ← add this
-    // inside cloneState
+    skipNext: s.skipNext,
+    queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
-    queuedSkipNext: s.queuedSkipNext,
   };
 }
