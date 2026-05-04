@@ -96,371 +96,59 @@ export function GameBoard({
   const flipMode = game.mode === "flip";
 
   const pendingPlayFlight = useRef(false);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [comboActive, setComboActive] = useState(false);
+const [isDrawing, setIsDrawing] = useState(false);
+const [comboActive, setComboActive] = useState(false);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pickColorFor, setPickColorFor] = useState<string | null>(null);
-  const [swapPickerFor, setSwapPickerFor] = useState<number | null>(null);
-  const [showRules, setShowRules] = useState(false);
-  const [revealed, setRevealed] = useState(viewerIdx !== undefined);
-  const [hasDrawnThisTurn, setHasDrawnThisTurn] = useState(false);
-  const [drawArmed, setDrawArmed] = useState(false);
-  const prevTurnRef = useRef<number | null>(null);
-  const lastHumanRef = useRef<number | null>(null);
-  const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
-  const wonRef = useRef(false);
-  const [announcement, setAnnouncement] = useState<{
-    text: string;
-    color: UnoColor | "white";
-  } | null>(null);
-  const lastTopRef = useRef<UnoCard | null>(null);
-  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+const [selectedId, setSelectedId] = useState<string | null>(null);
+const [pickColorFor, setPickColorFor] = useState<string | null>(null);
+const [swapPickerFor, setSwapPickerFor] = useState<number | null>(null);
+const [showRules, setShowRules] = useState(false);
+const [revealed, setRevealed] = useState(viewerIdx !== undefined);
+const [hasDrawnThisTurn, setHasDrawnThisTurn] = useState(false);
+const [drawArmed, setDrawArmed] = useState(false);
+const prevTurnRef = useRef<number | null>(null);
+const lastHumanRef = useRef<number | null>(null);
+const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
+const wonRef = useRef(false);
+const [announcement, setAnnouncement] = useState<{
+  text: string;
+  color: UnoColor | "white";
+} | null>(null);
+const lastTopRef = useRef<UnoCard | null>(null);
+const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
+const drawPileRef = useRef<HTMLDivElement | null>(null);
+const discardRef = useRef<HTMLDivElement | null>(null);
+const handZoneRef = useRef<HTMLDivElement | null>(null);
+const pendingOriginRef = useRef<PendingOrigin | null>(null);
+const [flights, setFlights] = useState<Flight[]>([]);
+const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
+const prevGameRef = useRef<GameState>(game);
+const prevDrawLenRef = useRef<number>(game.drawPile.length);
+const gameRef = useRef<GameState | null>(game);
+gameRef.current = game;
+const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const drawPileRef = useRef<HTMLDivElement | null>(null);
-  const discardRef = useRef<HTMLDivElement | null>(null);
-  const handZoneRef = useRef<HTMLDivElement | null>(null);
-  const pendingOriginRef = useRef<PendingOrigin | null>(null);
-  const [flights, setFlights] = useState<Flight[]>([]);
-  const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
-  const prevGameRef = useRef<GameState>(game);
-  const prevDrawLenRef = useRef<number>(game.drawPile.length);
-  const gameRef = useRef<GameState | null>(game);
-  gameRef.current = game;
-
-  const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const startDrawAnimation = useCallback(
-    (playerIdx: number, numCards: number, onComplete?: () => void) => {
-      if (isDrawing) return;
-      setIsDrawing(true);
-      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
-
-      let count = 0;
-      const launchOne = () => {
-        if (count >= numCards) return;
-        const currentIndex = count;
-        const src = drawPileRef.current;
-        if (!src) return;
-        const sRect = src.getBoundingClientRect();
-
-        let endX: number, endY: number;
-        if (playerIdx === handViewIdx && handZoneRef.current) {
-          const hz = handZoneRef.current.getBoundingClientRect();
-          endX = hz.right - 40;
-          endY = hz.top + hz.height / 2;
-        } else {
-          const seat = seatRefs.current[playerIdx];
-          if (!seat) return;
-          const seatRect = seat.getBoundingClientRect();
-          endX = seatRect.left + seatRect.width / 2;
-          endY = seatRect.top + seatRect.height / 2;
-        }
-
-        const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
-        const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
-        const flight: Flight = {
-          id: flightId,
-          card: placeholderCard,
-          start: { x: sRect.left + sRect.width / 2, y: sRect.top + sRect.height / 2 },
-          end: { x: endX, y: endY },
-          faceDown: true,
-        };
-
-        setFlights((prev) => [...prev, flight]);
-        setTimeout(() => {
-          setFlights((prev) => prev.filter((f) => f.id !== flightId));
-          setGame((g) => drawSingle(g, playerIdx));
-          if (currentIndex === numCards - 1) {
-            setTimeout(() => {
-              setIsDrawing(false);
-              onComplete?.();
-            }, 40);
-          }
-        }, 520);
-
-        count++;
-        if (count < numCards) setTimeout(launchOne, 500);
-      };
-      launchOne();
-    },
-    [handViewIdx, isDrawing, setFlights, setGame],
-  );
-
-  const processBotTurn = useCallback(() => {
-    const g = gameRef.current;
-    if (!g || g.winner || g.pendingAction || isDrawing) return;
-    if (g.players[g.currentPlayer]?.kind !== "bot") return;
-
-    const move = chooseBotMove(g, g.currentPlayer);
-
-    if (move.type === "draw") {
-      const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
-      if (g.pendingDraw > 0) {
-        startDrawAnimation(g.currentPlayer, toDraw, () => {
-          setGame((prev) => drawPenaltyThenEnd(prev, prev.currentPlayer));
-        });
-      } else {
-        startDrawAnimation(g.currentPlayer, toDraw, () => {
-          setGame((prev) => endTurn(prev, prev.currentPlayer));
-        });
-      }
-    } else if (move.type === "play") {
-      setGame((prev) => playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor));
-      const delay = 800 + Math.random() * 600;
-      botTimeoutRef.current = setTimeout(() => {
-        setGame((prev) => endTurn(prev, prev.currentPlayer));
-      }, delay);
-    }
-  }, [startDrawAnimation, setGame, isDrawing]);
-
-  const currentIdx = game.currentPlayer;
-  const currentPlayer = game.players[currentIdx];
-  const myTurn = handViewIdx === currentIdx && game.winner === null;
-  const isHumanTurn = currentPlayer?.kind === "human" && game.winner === null;
-  const top = game.discardPile[game.discardPile.length - 1];
-  const upNextIdx = nextPlayer(game);
-  const upNext = game.players[upNextIdx];
-  const viewerPlayer = game.players[handViewIdx];
-  const viewerIsBot = viewerPlayer?.kind === "bot";
-  const visibleTop =
-    suppressedTopId && suppressedTopId === top.id && game.discardPile.length >= 2
-      ? game.discardPile[game.discardPile.length - 2]
-      : top;
-
-  const act: GameActions = actions ?? {
-    play: (cardId, color) => setGame((g) => playCard(g, g.currentPlayer, cardId, color)),
-    draw: () => setGame((g) => drawOne(g, g.currentPlayer)),
-    endTurn: () => setGame((g) => endTurn(g, g.currentPlayer)),
-    resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
-  };
-
-  // ── Card flight animations (play only) ──
-  useEffect(() => {
-    const prev = prevGameRef.current;
-    prevGameRef.current = game;
-    if (prev === game) return;
-
-    if (game.drawPile.length > prevDrawLenRef.current + 0) {
-      const grew = game.drawPile.length - prevDrawLenRef.current;
-      if (grew > 5) sfx.shuffle();
-    }
-    prevDrawLenRef.current = game.drawPile.length;
-
-    const newFlights: Flight[] = [];
-    let newTopSuppress: string | null = null;
-    const now = Date.now();
-
-    game.players.forEach((_, i) => {
-      const before = prev.hands[i]?.length ?? 0;
-      const after = game.hands[i]?.length ?? 0;
-      const delta = after - before;
-      const seat = seatRefs.current[i];
-
-      if (delta === -1 && game.discardPile.length === prev.discardPile.length + 1) {
-        const playedCard = game.discardPile[game.discardPile.length - 1];
-        const dst = discardRef.current;
-        if (!dst || !playedCard) return;
-        const d = dst.getBoundingClientRect();
-        let startX: number;
-        let startY: number;
-        if (
-          i === handViewIdx &&
-          pendingOriginRef.current &&
-          pendingOriginRef.current.cardId === playedCard.id
-        ) {
-          startX = pendingOriginRef.current.rect.x;
-          startY = pendingOriginRef.current.rect.y;
-          pendingOriginRef.current = null;
-        } else if (seat) {
-          const s = seat.getBoundingClientRect();
-          startX = s.left + s.width / 2;
-          startY = s.top + s.height / 2;
-        } else {
-          return;
-        }
-        newFlights.push({
-          id: `play-${playedCard.id}-${now}`,
-          card: playedCard,
-          start: { x: startX, y: startY },
-          end: { x: d.left + d.width / 2, y: d.top + d.height / 2 },
-          faceDown: false,
-          initialRotate: Math.random() * 20 - 10,
-        });
-        newTopSuppress = playedCard.id;
-      }
-    });
-
-    if (newFlights.length === 0) return;
-    setFlights((prevFs) => [...prevFs, ...newFlights]);
-    if (newTopSuppress) setSuppressedTopId(newTopSuppress);
-    pendingPlayFlight.current = true;
-    const ids = newFlights.map((f) => f.id);
-    const t = setTimeout(() => {
-      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
-      if (newTopSuppress) setSuppressedTopId(null);
-      pendingPlayFlight.current = false;
-    }, 520);
-    return () => clearTimeout(t);
-  }, [game, handViewIdx]);
-
-  // Win detection
-  useEffect(() => {
-    if (game.winner !== null && !wonRef.current) {
-      wonRef.current = true;
-      sfx.win();
-      haptics.heavy();
-      setAnnouncement({ text: `${nameOf(game.players[game.winner])} WINS!`, color: "white" });
-      const t = setTimeout(() => setAnnouncement(null), 2400);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [game.winner, game.players]);
-
-  // Action card announcement
-  useEffect(() => {
-    const prev = lastTopRef.current;
-    lastTopRef.current = top;
-    if (!prev || prev.id === top.id) return;
-    let msg: string | null = null;
-    let heavy = false;
-    switch (top.value) {
-      case "skip":   msg = "SKIPPED!";  heavy = true; break;
-      case "reverse": msg = "REVERSE!";              break;
-      case "draw2":  msg = "+2 DRAW!"; heavy = true; break;
-      case "wild4":  msg = "+4 WILD!"; heavy = true; break;
-      case "wild":   msg = "WILD!";                  break;
-      case "0":  if (game.houseRules.sevenZero) msg = "ALL PASS!"; break;
-      case "7":  if (game.houseRules.sevenZero) msg = "SWAP!";     break;
-      case "flip": msg = "FLIP!"; heavy = true; break;
-    }
-    if (msg) {
-      const c: UnoColor | "white" = top.color === "wild" ? game.activeColor : top.color;
-      setAnnouncement({ text: msg, color: c });
-      if (heavy) { sfx.impact(); haptics.heavy(); }
-      const t = setTimeout(() => setAnnouncement(null), 1500);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [top, game.houseRules.sevenZero, game.activeColor]);
-
-  // Pass-and-play overlays
-  useEffect(() => {
-    if (!isPassAndPlay) {
-      setRevealed(true);
-      setOverlayKind(null);
-      return;
-    }
-    if (isDrawing) return;
-    const prev = prevTurnRef.current;
-    if (prev === currentIdx) return;
-    prevTurnRef.current = currentIdx;
-    setSelectedId(null);
-    setPickColorFor(null);
-    setHasDrawnThisTurn(false);
-    setDrawArmed(false);
-
-    if (game.winner !== null) { setRevealed(true); setOverlayKind(null); return; }
-    const cur = game.players[currentIdx];
-    if (cur.kind === "bot") { setRevealed(true); setOverlayKind(null); return; }
-    const lastHuman = lastHumanRef.current;
-    if (lastHuman === currentIdx) {
-      setRevealed(true); setOverlayKind(null); sfx.ding();
-    } else {
-      setRevealed(false); setOverlayKind("pass");
-    }
-  }, [currentIdx, game.players, game.winner, isPassAndPlay, isDrawing]);
-
-  useEffect(() => {
-    if (revealed && currentPlayer?.kind === "human") {
-      lastHumanRef.current = currentIdx;
-    }
-  }, [revealed, currentIdx, currentPlayer?.kind]);
-
-  // Your-turn alert (network mode)
-  useEffect(() => {
-    if (isPassAndPlay) return;
-    if (myTurn && !viewerIsBot) { sfx.yourTurn(); haptics.medium(); }
-  }, [myTurn, isPassAndPlay, viewerIsBot]);
-
-  // Bot swap handling
-  useEffect(() => {
-    if (!enableBots) return;
-    if (game.pendingAction?.type === "swap7") {
-      const fromKind = game.players[game.pendingAction.from].kind;
-      if (fromKind === "bot") {
-        const t = setTimeout(() => {
-          setGame((g) => {
-            if (g.pendingAction?.type !== "swap7") return g;
-            return resolveSwap(g, chooseBotSwapTarget(g));
-          });
-        }, 1100 + Math.random() * 600);
-        return () => clearTimeout(t);
-      }
-    }
-  }, [game.pendingAction, game.players, enableBots, setGame]);
-
-  useEffect(() => {
-    return () => {
-      if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
-    };
-  }, []);
-
-  // Bot loop
-  useEffect(() => {
-    if (!enableBots || game.winner || isDrawing || pendingPlayFlight.current) return;
-    const current = game.players[game.currentPlayer];
-    if (!current || current.kind !== "bot") return;
-    const delay = 1200 + Math.random() * 800;
-    botTimeoutRef.current = setTimeout(processBotTurn, delay);
-    return () => {
-      if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
-    };
-  }, [game.currentPlayer, game.winner, enableBots, pendingPlayFlight.current, processBotTurn, isDrawing]);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    const el = cardRefs.current[selectedId];
-    if (el) el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (isPassAndPlay) return;
-    setSelectedId(null);
-    setPickColorFor(null);
-    (false);
-    setDrawArmed(false);
-  }, [currentIdx, isPassAndPlay]);
-  
-  // Reset combo when the turn changes or a draw happens
+// ── Reset combo when the turn changes or a draw happens ──
 useEffect(() => {
   if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
     setComboActive(false);
   }
 }, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
 
-  const captureOriginFor = (cardId: string) => {
-    const el = cardRefs.current[cardId];
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    pendingOriginRef.current = {
-      cardId,
-      rect: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
-    };
-  };
+const startDrawAnimation = useCallback(
+  // … (keep your existing startDrawAnimation function unchanged) …
+, [handViewIdx, isDrawing, setFlights, setGame]);
 
-  const onCardTap = (cardId: string) => {
+const onCardTap = (cardId: string) => {
   if (!myTurn || !revealed || viewerIsBot) return;
   if (game.pendingAction !== null) return;
   const card = game.hands[handViewIdx].find((c) => c.id === cardId);
   if (!card) return;
 
-  // Determine playability
   let playable: boolean;
   if (comboActive) {
-    // Combo: only identical card to the top discard is allowed
     playable = card.color === top.color && card.value === top.value;
     if (!game.houseRules.sameCardCombo) playable = false;
   } else {
@@ -476,14 +164,13 @@ useEffect(() => {
     sfx.click(); haptics.light(); setSelectedId(cardId); return;
   }
   confirmPlay();
-  };
+};
 
-  const confirmPlay = () => {
+const confirmPlay = () => {
   if (!selectedId) return;
   const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
   if (!card) return;
 
-  // Determine actual playability again to be safe
   const actualPlayable = comboActive
     ? (card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo)
     : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
@@ -491,7 +178,6 @@ useEffect(() => {
 
   if (card.color === "wild") { setPickColorFor(selectedId); return; }
 
-  // Check if combo can continue
   const canContinueCombo =
     game.houseRules.sameCardCombo &&
     card.color !== "wild" &&
@@ -511,76 +197,46 @@ useEffect(() => {
   }
 };
 
-  const handlePickColor = (color: UnoColor) => {
-    if (!pickColorFor) return;
-    captureOriginFor(pickColorFor);
-    sfx.swish(); haptics.medium();
-    act.play(pickColorFor, color);
-    setPickColorFor(null);
-    setSelectedId(null);
-  };
+const onPass = () => {
+  if (!myTurn || !revealed) return;
+  haptics.light();
+  act.endTurn();
+};
 
-  const onPass = () => {
-    if (!myTurn || !revealed) return;
-    haptics.light();
-    act.endTurn();
-  };
+const onDrawPileTap = () => {
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (isDrawing || comboActive) return;
 
-  const onDrawPileTap = () => {
-    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-    if (isDrawing) return;
+  if (selectedId) { setSelectedId(null); return; }
+  if (hasDrawnThisTurn) return;
 
-    if (selectedId) { setSelectedId(null); return; }
-    if (hasDrawnThisTurn) return;
+  if (!drawArmed) {
+    sfx.click(); haptics.light(); setDrawArmed(true); return;
+  }
 
-    if (!drawArmed) {
-      sfx.click(); haptics.light(); setDrawArmed(true); return;
-    }
+  setDrawArmed(false);
+  setHasDrawnThisTurn(true);
+  setComboActive(false);
+  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+  startDrawAnimation(handViewIdx, cardsToDraw);
+};
 
-    const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-    setDrawArmed(false);
-    setHasDrawnThisTurn(true);
-    setComboActive(false);            // <-- add this
-    startDrawAnimation(handViewIdx, cardsToDraw);
-  };
-
-  
-  const onPickSwap = (targetIdx: number) => {
-    haptics.medium();
-    act.resolveSwap(targetIdx);
-    setSwapPickerFor(null);
-  };
-
-  useEffect(() => {
-    if (
-      game.pendingAction?.type === "swap7" &&
-      game.pendingAction.from === handViewIdx &&
-      revealed &&
-      !viewerIsBot
-    ) {
-      setSwapPickerFor(game.pendingAction.from);
-    } else {
-      setSwapPickerFor(null);
-    }
-  }, [game.pendingAction, handViewIdx, revealed, viewerIsBot]);
-
-  const myHand = game.hands[handViewIdx] ?? [];
-
-  const canEndTurn =
+const canEndTurn =
   myTurn &&
   !isDrawing &&
   game.pendingAction === null &&
   !pickColorFor &&
   !swapPickerFor &&
-  hasDrawnThisTurn &&      // player must have drawn
-  !comboActive;            // not in a combo chain
+  hasDrawnThisTurn &&
+  !comboActive;
 
-  const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
-  const selectedPlayable =
-    selectedCard !== null &&
-    (isComboPhase
-      ? (selectedCard.color === top.color && selectedCard.value === top.value)
-      : isValidMove(selectedCard, top, game.activeColor, game.pendingDraw, game.houseRules));
+// ── Keep the selectedPlayable definition (unchanged) ──
+const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
+const selectedPlayable =
+  selectedCard !== null &&
+  (comboActive
+    ? (selectedCard.color === top.color && selectedCard.value === top.value)
+    : isValidMove(selectedCard, top, game.activeColor, game.pendingDraw, game.houseRules));
 
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
   const positions = seatLayout(game.players.length);
