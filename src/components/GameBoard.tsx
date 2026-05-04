@@ -97,7 +97,7 @@ export function GameBoard({
 
   const pendingPlayFlight = useRef(false);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [hasPlayedThisTurn, setHasPlayedThisTurn] = useState(false);
+  const [comboActive, setComboActive] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pickColorFor, setPickColorFor] = useState<string | null>(null);
@@ -361,7 +361,6 @@ export function GameBoard({
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
-    setHasPlayedThisTurn(false);
 
     if (game.winner !== null) { setRevealed(true); setOverlayKind(null); return; }
     const cur = game.players[currentIdx];
@@ -431,10 +430,16 @@ export function GameBoard({
     if (isPassAndPlay) return;
     setSelectedId(null);
     setPickColorFor(null);
-    setHasDrawnThisTurn(false);
+    (false);
     setDrawArmed(false);
-    setHasPlayedThisTurn(false);
   }, [currentIdx, isPassAndPlay]);
+  
+  // Reset combo when the turn changes or a draw happens
+useEffect(() => {
+  if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
+    setComboActive(false);
+  }
+}, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
 
   const captureOriginFor = (cardId: string) => {
     const el = cardRefs.current[cardId];
@@ -447,46 +452,64 @@ export function GameBoard({
   };
 
   const onCardTap = (cardId: string) => {
-    if (!myTurn || !revealed || viewerIsBot) return;
-    if (game.pendingAction !== null) return;
-    const card = game.hands[handViewIdx].find((c) => c.id === cardId);
-    if (!card) return;
+  if (!myTurn || !revealed || viewerIsBot) return;
+  if (game.pendingAction !== null) return;
+  const card = game.hands[handViewIdx].find((c) => c.id === cardId);
+  if (!card) return;
 
-    const isComboPhase = hasPlayedThisTurn;
-    let playable: boolean;
-    if (isComboPhase) {
-      playable = card.color === top.color && card.value === top.value;
-    } else {
-      playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
-    }
-    setDrawArmed(false);
+  // Determine playability
+  let playable: boolean;
+  if (comboActive) {
+    // Combo: only identical card to the top discard is allowed
+    playable = card.color === top.color && card.value === top.value;
+    if (!game.houseRules.sameCardCombo) playable = false;
+  } else {
+    playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
+  }
 
-    if (!playable) {
-      sfx.click(); haptics.light(); setSelectedId(cardId); return;
-    }
-    if (selectedId !== cardId) {
-      sfx.click(); haptics.light(); setSelectedId(cardId); return;
-    }
-    confirmPlay();
+  setDrawArmed(false);
+
+  if (!playable) {
+    sfx.click(); haptics.light(); setSelectedId(cardId); return;
+  }
+  if (selectedId !== cardId) {
+    sfx.click(); haptics.light(); setSelectedId(cardId); return;
+  }
+  confirmPlay();
   };
 
   const confirmPlay = () => {
-    if (!selectedId) return;
-    const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
-    if (!card) return;
-    const isComboPhase = hasPlayedThisTurn;
-    const playable = isComboPhase
-      ? (card.color === top.color && card.value === top.value)
-      : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
-    if (!playable) return;
+  if (!selectedId) return;
+  const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
+  if (!card) return;
 
-    if (card.color === "wild") { setPickColorFor(selectedId); return; }
-    captureOriginFor(selectedId);
-    sfx.swish(); haptics.medium();
-    act.play(selectedId);
-    setSelectedId(null);
-    setHasPlayedThisTurn(true);
-  };
+  // Determine actual playability again to be safe
+  const actualPlayable = comboActive
+    ? (card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo)
+    : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
+  if (!actualPlayable) return;
+
+  if (card.color === "wild") { setPickColorFor(selectedId); return; }
+
+  // Check if combo can continue
+  const canContinueCombo =
+    game.houseRules.sameCardCombo &&
+    card.color !== "wild" &&
+    game.hands[handViewIdx].some(
+      (c) => c.id !== card.id && c.color === card.color && c.value === card.value
+    );
+
+  captureOriginFor(selectedId);
+  sfx.swish(); haptics.medium();
+  act.play(selectedId);
+  setSelectedId(null);
+
+  if (canContinueCombo) {
+    setComboActive(true);
+  } else {
+    setComboActive(false);
+  }
+};
 
   const handlePickColor = (color: UnoColor) => {
     if (!pickColorFor) return;
@@ -495,7 +518,6 @@ export function GameBoard({
     act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
-    setHasPlayedThisTurn(true);
   };
 
   const onPass = () => {
@@ -506,7 +528,7 @@ export function GameBoard({
 
   const onDrawPileTap = () => {
     if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-    if (isDrawing || hasPlayedThisTurn) return;
+    if (isDrawing) return;
 
     if (selectedId) { setSelectedId(null); return; }
     if (hasDrawnThisTurn) return;
@@ -518,9 +540,11 @@ export function GameBoard({
     const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
     setDrawArmed(false);
     setHasDrawnThisTurn(true);
+    setComboActive(false);            // <-- add this
     startDrawAnimation(handViewIdx, cardsToDraw);
   };
 
+  
   const onPickSwap = (targetIdx: number) => {
     haptics.medium();
     act.resolveSwap(targetIdx);
@@ -543,15 +567,15 @@ export function GameBoard({
   const myHand = game.hands[handViewIdx] ?? [];
 
   const canEndTurn =
-    myTurn &&
-    !isDrawing &&
-    game.pendingAction === null &&
-    !pickColorFor &&
-    !swapPickerFor &&
-    (hasPlayedThisTurn || hasDrawnThisTurn);
+  myTurn &&
+  !isDrawing &&
+  game.pendingAction === null &&
+  !pickColorFor &&
+  !swapPickerFor &&
+  hasDrawnThisTurn &&      // player must have drawn
+  !comboActive;            // not in a combo chain
 
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
-  const isComboPhase = hasPlayedThisTurn;
   const selectedPlayable =
     selectedCard !== null &&
     (isComboPhase
@@ -698,10 +722,10 @@ export function GameBoard({
               game.pendingAction !== null ||
               viewerIsBot ||
               isDrawing ||
-              hasPlayedThisTurn
+              
             }
             className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot && !isDrawing && !hasPlayedThisTurn
+              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot && !isDrawing && !
                 ? "active:scale-95"
                 : "opacity-70"
             } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
@@ -809,7 +833,6 @@ export function GameBoard({
             <AnimatePresence initial={false}>
               {myHand.map((c, i) => {
                 const showFaceDown = viewerIsBot || (!revealed && myTurn && isPassAndPlay);
-                const isComboPhase = hasPlayedThisTurn;
                 const playable =
                   myTurn &&
                   !viewerIsBot &&
