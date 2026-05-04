@@ -343,8 +343,8 @@ useEffect(() => {
       case "flip": msg = "FLIP!"; heavy = true; break;
     }
     if (msg) {
-      const topColor: WildColor = top.color;
-const c: UnoColor | "white" = (top.color as string) === "wild" ? game.activeColor : (top.color as UnoColor);
+     const topColor: WildColor = top.color;
+const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
       setAnnouncement({ text: msg, color: c });
       if (heavy) { sfx.impact(); haptics.heavy(); }
       const t = setTimeout(() => setAnnouncement(null), 1500);
@@ -488,11 +488,11 @@ const c: UnoColor | "white" = (top.color as string) === "wild" ? game.activeColo
       : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     if (!actualPlayable) return;
 
-    if (card.color === "wild") { setPickColorFor(selectedId); return; }
+    if (card.value === "wild") { setPickColorFor(selectedId); return; }
 
     const canContinueCombo =
       game.houseRules.sameCardCombo &&
-      card.color !== "wild" &&
+      card.value !== "wild" &&
       game.hands[handViewIdx].some(
         (c) => c.id !== card.id && c.color === card.color && c.value === card.value
       );
