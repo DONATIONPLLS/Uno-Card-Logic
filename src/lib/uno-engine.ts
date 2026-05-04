@@ -7,7 +7,8 @@ export type CardValue =
   | "skip" | "reverse" | "draw2" | "wild" | "wild4" | "flip"
   | "draw1" | "wild_draw2"    // light side only
   | "draw_to_color"            // dark side only
-  | "skip_all";                // dark side only
+  | "skip_all"                 // dark side only
+  | "draw5";                   // dark side only (+5)
 
 export interface UnoCard {
   id: string;
@@ -82,6 +83,11 @@ export function buildDeck(mode: GameMode, allWild = false): { lightDeck: UnoCard
       dark.push({ id: nextId(), color: dc, value: "draw_to_color" });
       dark.push({ id: nextId(), color: dc, value: "skip_all" });
     }
+    
+    // Dark‑only: draw5 x2 per colour
+for (let dup = 0; dup < 2; dup++) {
+  dark.push({ id: nextId(), color: dc, value: "draw5" });
+}
 
     // Flip cards (if mode === "flip") x2 per colour
     if (mode === "flip") {
@@ -261,7 +267,7 @@ if (card.color === "wild") return true;
 if (card.color === activeColor) return true;
 if (card.value === topCard.value) return true;
 // allow draw1, wild_draw2, draw_to_color, skip_all
-if (card.value === "draw1" || card.value === "wild_draw2" || card.value === "draw_to_color" || card.value === "skip_all") return true;
+if (card.value === "draw1" || card.value === "wild_draw2" || card.value === "draw_to_color" || card.value === "skip_all" || card.value === "draw5") return true;
     return false;
 }
 
@@ -334,6 +340,7 @@ export function describe(c: UnoCard): string {
       wild_draw2: "Wild +2",
       draw_to_color: "Draw Color",
        skip_all: "Skip All",
+       draw5: "+5",
   };
   return (colorName + valueName[c.value]).trim();
 }
@@ -586,6 +593,7 @@ export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
       case "wild": score = 50; break;
       case "wild4": score = 60; break;
       case "flip": score = 100; break;
+      case "draw5": score = 25; break;
       default: score = 5 + Number(c.value);
     }
     if (c.value === "draw2" || c.value === "wild4") {
