@@ -138,8 +138,61 @@ useEffect(() => {
 }, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
 
 const startDrawAnimation = useCallback(
-  // … (keep your existing startDrawAnimation function unchanged) …
-, [handViewIdx, isDrawing, setFlights, setGame]);
+  (playerIdx: number, numCards: number, onComplete?: () => void) => {
+    if (isDrawing) return;
+    setIsDrawing(true);
+    if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
+
+    let count = 0;
+    const launchOne = () => {
+      if (count >= numCards) return;
+      const currentIndex = count;
+      const src = drawPileRef.current;
+      if (!src) return;
+      const sRect = src.getBoundingClientRect();
+
+      let endX: number, endY: number;
+      if (playerIdx === handViewIdx && handZoneRef.current) {
+        const hz = handZoneRef.current.getBoundingClientRect();
+        endX = hz.right - 40;
+        endY = hz.top + hz.height / 2;
+      } else {
+        const seat = seatRefs.current[playerIdx];
+        if (!seat) return;
+        const seatRect = seat.getBoundingClientRect();
+        endX = seatRect.left + seatRect.width / 2;
+        endY = seatRect.top + seatRect.height / 2;
+      }
+
+      const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
+      const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
+      const flight: Flight = {
+        id: flightId,
+        card: placeholderCard,
+        start: { x: sRect.left + sRect.width / 2, y: sRect.top + sRect.height / 2 },
+        end: { x: endX, y: endY },
+        faceDown: true,
+      };
+
+      setFlights((prev) => [...prev, flight]);
+      setTimeout(() => {
+        setFlights((prev) => prev.filter((f) => f.id !== flightId));
+        setGame((g) => drawSingle(g, playerIdx));
+        if (currentIndex === numCards - 1) {
+          setTimeout(() => {
+            setIsDrawing(false);
+            onComplete?.();
+          }, 40);
+        }
+      }, 520);
+
+      count++;
+      if (count < numCards) setTimeout(launchOne, 500);
+    };
+    launchOne();
+  },
+  [handViewIdx, isDrawing, setFlights, setGame],
+);
 
 const onCardTap = (cardId: string) => {
   if (!myTurn || !revealed || viewerIsBot) return;
@@ -369,23 +422,29 @@ const selectedPlayable =
           className="row-start-2 col-start-2 flex items-center justify-center gap-4"
           onClick={() => { setSelectedId(null); setDrawArmed(false); }}
         >
-          <button
-            onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
-            disabled={
-              !myTurn ||
-              !revealed ||
-              hasDrawnThisTurn ||
-              game.pendingAction !== null ||
-              viewerIsBot ||
-              isDrawing ||
-              
-            }
-            className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-              myTurn && revealed && !hasDrawnThisTurn && game.pendingAction === null && !viewerIsBot && !isDrawing && !
-                ? "active:scale-95"
-                : "opacity-70"
-            } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
-          >
+ <button
+  onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+  disabled={
+    !myTurn ||
+    !revealed ||
+    hasDrawnThisTurn ||
+    game.pendingAction !== null ||
+    viewerIsBot ||
+    isDrawing ||
+    comboActive  // cannot draw during a combo chain
+  }
+  className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
+    myTurn &&
+    revealed &&
+    !hasDrawnThisTurn &&
+    game.pendingAction === null &&
+    !viewerIsBot &&
+    !isDrawing &&
+    !comboActive          // active visual only when draw is actually possible
+      ? "active:scale-95"
+      : "opacity-70"
+  } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
+>
             <div ref={drawPileRef}>
               <UnoCardView
                 card={{ id: "back", color: "wild", value: "wild" }}
@@ -492,7 +551,7 @@ const selectedPlayable =
                 const playable =
                   myTurn &&
                   !viewerIsBot &&
-                  (isComboPhase
+                  (comboActive
                     ? (c.color === top.color && c.value === top.value)
                     : isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules));
                 const selected = selectedId === c.id;
