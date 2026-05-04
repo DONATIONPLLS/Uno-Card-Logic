@@ -25,6 +25,7 @@ export function buildDeck(mode: GameMode, allWild = false): { lightDeck: UnoCard
   const light: UnoCard[] = [];
   const dark: UnoCard[] = [];
 
+  // ── All‑Wild mode (unchanged) ──
   if (allWild) {
     for (let i = 0; i < 36; i++) {
       const l: UnoCard = { id: nextId(), color: "wild", value: "wild" };
@@ -38,7 +39,6 @@ export function buildDeck(mode: GameMode, allWild = false): { lightDeck: UnoCard
       l.darkId = d.id; d.darkId = l.id;
       light.push(l); dark.push(d);
     }
-
     const flipMap: Record<string, UnoCard> = {};
     for (const c of [...light, ...dark]) {
       if (c.darkId) flipMap[c.id] = [...light, ...dark].find(x => x.id === c.darkId)!;
@@ -46,47 +46,117 @@ export function buildDeck(mode: GameMode, allWild = false): { lightDeck: UnoCard
     return { lightDeck: light, darkDeck: dark, flipMap };
   }
 
+  // ── Standard / Chaos / Custom modes ──
+  if (mode !== "flip") {
+    // Standard Uno deck (only light side needed)
+    const COLORS: UnoColor[] = ["red", "yellow", "green", "blue"];
+    for (const color of COLORS) {
+      // one 0
+      light.push({ id: nextId(), color, value: "0" });
+      // two of 1‑9
+      for (let n = 1; n <= 9; n++) {
+        for (let d = 0; d < 2; d++) {
+          light.push({ id: nextId(), color, value: String(n) as CardValue });
+        }
+      }
+      // two of skip, reverse, draw2
+      for (const v of ["skip", "reverse", "draw2"] as CardValue[]) {
+        for (let d = 0; d < 2; d++) {
+          light.push({ id: nextId(), color, value: v });
+        }
+      }
+    }
+    // wilds
+    for (let i = 0; i < 4; i++) {
+      light.push({ id: nextId(), color: "wild", value: "wild" });
+      light.push({ id: nextId(), color: "wild", value: "wild4" });
+    }
+    return { lightDeck: light, darkDeck: [], flipMap: {} };
+  }
+
+  // ── Uno Flip mode ──
   const LIGHT_COLORS: UnoColor[] = ["red", "yellow", "green", "blue"];
   const DARK_COLORS: UnoColor[] = ["pink", "teal", "orange", "purple"];
 
+  // Number cards: 1‑9 (twice) – NO 0 card in official rules
+  for (let ci = 0; ci < 4; ci++) {
+    const lc = LIGHT_COLORS[ci];
+    const dc = DARK_COLORS[ci];
+    for (let n = 1; n <= 9; n++) {
+      for (let dup = 0; dup < 2; dup++) {
+        const l: UnoCard = { id: nextId(), color: lc, value: String(n) as CardValue };
+        const d: UnoCard = { id: nextId(), color: dc, value: String(n) as CardValue };
+        l.darkId = d.id;
+        d.darkId = l.id;
+        light.push(l);
+        dark.push(d);
+      }
+    }
+  }
+
+  // Action cards: each colour gets 2× Reverse, 2× Skip (light) / Skip Everyone (dark),
+  // 2× Draw One (light) / Draw Five (dark), 2× Flip.
   for (let ci = 0; ci < 4; ci++) {
     const lc = LIGHT_COLORS[ci];
     const dc = DARK_COLORS[ci];
 
-    // 0
-    light.push({ id: nextId(), color: lc, value: "0" });
-    dark.push({ id: nextId(), color: dc, value: "0" });
-
-    // 1-9 (two of each)
-    for (let n = 1; n <= 9; n++) {
-      for (let dup = 0; dup < 2; dup++) {
-        light.push({ id: nextId(), color: lc, value: String(n) as CardValue });
-        dark.push({ id: nextId(), color: dc, value: String(n) as CardValue });
-      }
-    }
-
-    // skip, reverse, draw2 (two of each)
-    for (const v of ["skip", "reverse", "draw2"] as CardValue[]) {
-      for (let dup = 0; dup < 2; dup++) {
-        light.push({ id: nextId(), color: lc, value: v });
-        dark.push({ id: nextId(), color: dc, value: v });
-      }
-    }
-
-    // Light‑only: draw1 (coloured +1) x2 per colour
+    // Reverse (both sides)
     for (let dup = 0; dup < 2; dup++) {
-      light.push({ id: nextId(), color: lc, value: "draw1" });
+      const l: UnoCard = { id: nextId(), color: lc, value: "reverse" };
+      const d: UnoCard = { id: nextId(), color: dc, value: "reverse" };
+      l.darkId = d.id; d.darkId = l.id;
+      light.push(l); dark.push(d);
     }
-
-    // Dark‑only: draw_to_color, skip_all x2 per colour
+    // Light Skip ↔ Dark Skip Everyone
     for (let dup = 0; dup < 2; dup++) {
-      dark.push({ id: nextId(), color: dc, value: "draw_to_color" });
-      dark.push({ id: nextId(), color: dc, value: "skip_all" });
+      const l: UnoCard = { id: nextId(), color: lc, value: "skip" };
+      const d: UnoCard = { id: nextId(), color: dc, value: "skip_all" };
+      l.darkId = d.id; d.darkId = l.id;
+      light.push(l); dark.push(d);
     }
-    
-    // Dark‑only: draw5 x2 per colour
-for (let dup = 0; dup < 2; dup++) {
-  dark.push({ id: nextId(), color: dc, value: "draw5" });
+    // Light Draw One ↔ Dark Draw Five
+    for (let dup = 0; dup < 2; dup++) {
+      const l: UnoCard = { id: nextId(), color: lc, value: "draw1" };
+      const d: UnoCard = { id: nextId(), color: dc, value: "draw5" };
+      l.darkId = d.id; d.darkId = l.id;
+      light.push(l); dark.push(d);
+    }
+    // Flip cards
+    for (let dup = 0; dup < 2; dup++) {
+      const l: UnoCard = { id: nextId(), color: lc, value: "flip" };
+      const d: UnoCard = { id: nextId(), color: dc, value: "flip" };
+      l.darkId = d.id; d.darkId = l.id;
+      light.push(l); dark.push(d);
+    }
+  }
+
+  // Wilds
+  for (let i = 0; i < 4; i++) {
+    // Wild (both sides)
+    const wl: UnoCard = { id: nextId(), color: "wild", value: "wild" };
+    const wd: UnoCard = { id: nextId(), color: "wild", value: "wild" };
+    wl.darkId = wd.id; wd.darkId = wl.id;
+    light.push(wl); dark.push(wd);
+  }
+  for (let i = 0; i < 4; i++) {
+    // Light Wild Draw Two ↔ Dark Wild Draw Color
+    const w2l: UnoCard = { id: nextId(), color: "wild", value: "wild_draw2" };
+    const wcd: UnoCard = { id: nextId(), color: "wild", value: "draw_to_color" };
+    w2l.darkId = wcd.id; wcd.darkId = w2l.id;
+    light.push(w2l); dark.push(wcd);
+  }
+
+  // Build flipMap from all cards that have a darkId
+  const flipMap: Record<string, UnoCard> = {};
+  const allCards = [...light, ...dark];
+  for (const c of allCards) {
+    if (c.darkId) {
+      flipMap[c.id] = allCards.find(x => x.id === c.darkId)!;
+    }
+  }
+
+  // No length imbalance – both decks have exactly 56 cards (112 faces).
+  return { lightDeck: light, darkDeck: dark, flipMap };
 }
 
     // Flip cards (if mode === "flip") x2 per colour
