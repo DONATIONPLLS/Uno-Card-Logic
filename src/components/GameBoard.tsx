@@ -495,7 +495,7 @@ export function GameBoard({
     act.play(pickColorFor, color);
     setPickColorFor(null);
     setSelectedId(null);
-    Set(true);
+    setHasPlayedThisTurn(true);
   };
 
   const onPass = () => {
@@ -648,7 +648,7 @@ export function GameBoard({
               score={game.scores[seatAt("top")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("top")!.idx] = el; }}
               darkSide={backDarkSide}
-              flipMap={game.flipMap} 
+              flipMap={flipMap} 
             />
           ) : null}
         </div>
@@ -664,7 +664,7 @@ export function GameBoard({
               score={game.scores[seatAt("left")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("left")!.idx] = el; }}
               darkSide={backDarkSide}
-              flipMap={game.flipMap} 
+              flipMap={flipMap} 
             />
           ) : null}
         </div>
@@ -680,7 +680,7 @@ export function GameBoard({
               score={game.scores[seatAt("right")!.idx]}
               avatarRef={(el) => { seatRefs.current[seatAt("right")!.idx] = el; }}
               darkSide={backDarkSide}
-              flipMap={game.flipMap} 
+              flipMap={flipMap} 
             />
           ) : null}
         </div>
@@ -713,7 +713,7 @@ export function GameBoard({
                 flipMode={flipMode}
                 size="md"
                 darkSide={backDarkSide}
-                flipMap={game.flipMap} 
+                flipMap={flipMap} 
               />
             </div>
             <span className="text-[10px] text-white/70">
@@ -724,7 +724,7 @@ export function GameBoard({
           <div className="flex flex-col items-center gap-1">
             <motion.div ref={discardRef} key={visibleTop.id}>
               <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide} 
-              flipMap={game.flipMap} />
+              flipMap={flipMap} />
             </motion.div>
             <span className="text-[10px] text-white/60">Top</span>
           </div>
@@ -843,7 +843,7 @@ export function GameBoard({
                         flipMode={flipMode}
                         size="lg"
                         darkSide={darkSide}
-                        flipMap={game.flipMap} 
+                        flipMap={flipMap} 
                       />
                     </div>
                   </motion.div>
@@ -880,7 +880,7 @@ export function GameBoard({
             transition={{ duration: 0.5, ease: "easeInOut" }}
           >
             <UnoCardView card={f.card} faceDown={f.faceDown} flipMode={flipMode} size="md" darkSide={darkSide}
-            flipMap={game.flipMap} />
+            flipMap={flipMap} />
           </motion.div>
         ))}
       </div>
@@ -1006,7 +1006,8 @@ function SeatView({
   flipMode?: boolean;
   score: number;
   avatarRef?: (el: HTMLDivElement | null) => void;
-  darkSide?: boolean;
+  darkSide?: boolean
+  flipMap?: Record<string, UnoCard>;   // add this
 }) {
   const shown = hand.slice(0, 7);
   const extra = hand.length - shown.length;
@@ -1043,7 +1044,7 @@ function SeatView({
             }}
           >
             <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide}
-            flipMap={game.flipMap} />
+            flipMap={flipMap} />
           </div>
         ))}
         {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
