@@ -651,3 +651,4 @@ function cloneState(s: GameState): GameState {
     // inside cloneState
     flipMap: { ...s.flipMap },
   };
+}
