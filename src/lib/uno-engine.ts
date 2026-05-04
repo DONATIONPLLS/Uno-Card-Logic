@@ -344,9 +344,8 @@ export function dealNewGame(opts: NewGameOptions): GameState {
         ? [...opts.previousScores]
         : new Array(players.length).fill(0),
     skipNext: false,
-    flipMap,
-    skipNext: false,
-queuedSkipNext: false,   // <-- add this
+flipMap,
+queuedSkipNext: false,
   };
 }
 
