@@ -262,6 +262,7 @@ if (card.color === activeColor) return true;
 if (card.value === topCard.value) return true;
 // allow draw1, wild_draw2, draw_to_color, skip_all
 if (card.value === "draw1" || card.value === "wild_draw2" || card.value === "draw_to_color" || card.value === "skip_all") return true;
+    return false;
 }
 
 export interface NewGameOptions {
@@ -329,6 +330,10 @@ export function describe(c: UnoCard): string {
     "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
     skip: "Skip", reverse: "Reverse", draw2: "Draw 2",
     wild: "Wild", wild4: "Wild Draw 4", flip: "Flip",
+     draw1: "+1",
+      wild_draw2: "Wild +2",
+      draw_to_color: "Draw Color",
+       skip_all: "Skip All",
   };
   return (colorName + valueName[c.value]).trim();
 }
@@ -563,7 +568,7 @@ export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
     return { type: "play", cardId: playable[0].id };
   }
 
-  const colorCount: Record<UnoColor, number> = { red: 0, yellow: 0, green: 0, blue: 0 };
+  const colorCount: Record<UnoColor, number> = { red: 0, yellow: 0, green: 0, blue: 0, pink: 0, teal: 0, orange: 0, purple: 0 };
   for (const c of hand) {
     if (c.color !== "wild") colorCount[c.color as UnoColor]++;
   }
@@ -646,4 +651,3 @@ function cloneState(s: GameState): GameState {
     // inside cloneState
     flipMap: { ...s.flipMap },
   };
-}
