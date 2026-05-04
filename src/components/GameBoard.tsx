@@ -1044,7 +1044,7 @@ function SeatView({
             }}
           >
             <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide}
-            flipMap={game.flipMap} />
+            flipMap={flipMap} />
           </div>
         ))}
         {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
