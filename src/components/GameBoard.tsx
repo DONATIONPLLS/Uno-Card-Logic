@@ -14,6 +14,7 @@ import {
   type GameState,
   type UnoCard,
   type UnoColor,
+  type WildColor, // <-- add this
   drawSingle,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
@@ -129,13 +130,6 @@ export function GameBoard({
   const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Reset combo when the turn changes or a draw happens ──
-  useEffect(() => {
-    if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
-      setComboActive(false);
-    }
-  }, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
-
   // Real startDrawAnimation (not a placeholder)
   const startDrawAnimation = useCallback(
     (playerIdx: number, numCards: number, onComplete?: () => void) => {
@@ -242,6 +236,13 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
+   // ── Reset combo when the turn changes or a draw happens ──
+useEffect(() => {
+  if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
+    setComboActive(false);
+  }
+}, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
+
   // ── Card flight animations (play only) ──
   useEffect(() => {
     const prev = prevGameRef.current;
@@ -342,7 +343,7 @@ export function GameBoard({
       case "flip": msg = "FLIP!"; heavy = true; break;
     }
     if (msg) {
-      const c: UnoColor | "white" = top.color === "wild" ? game.activeColor : top.color;
+      const c: UnoColor | "white" = (top.color as WildColor) === "wild"    ? game.activeColor    : (top.color as UnoColor);
       setAnnouncement({ text: msg, color: c });
       if (heavy) { sfx.impact(); haptics.heavy(); }
       const t = setTimeout(() => setAnnouncement(null), 1500);
