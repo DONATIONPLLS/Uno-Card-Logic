@@ -213,6 +213,7 @@ export interface GameState {
   scores: number[];
   skipNext: boolean;
   flipMap: Record<string, UnoCard>; //new
+  queuedSkipNext: boolean;   // <-- add this
 }
 
 
@@ -344,6 +345,8 @@ export function dealNewGame(opts: NewGameOptions): GameState {
         : new Array(players.length).fill(0),
     skipNext: false,
     flipMap,
+    skipNext: false,
+queuedSkipNext: false,   // <-- add this
   };
 }
 
@@ -422,11 +425,11 @@ export function playCard(
   }
 
   if (card.value === "flip") {
-  s.gameSide = s.gameSide === "light" ? "dark" : "light";
-  s.discardPile = s.discardPile.map(c => flipCard(c, s.flipMap));
-  s.drawPile = s.drawPile.map(c => flipCard(c, s.flipMap));
-  s.hands = s.hands.map(hand => hand.map(c => flipCard(c, s.flipMap)));
-  s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
+    s.gameSide = s.gameSide === "light" ? "dark" : "light";
+    s.discardPile = s.discardPile.map(c => flipCard(c, s.flipMap));
+    s.drawPile = s.drawPile.map(c => flipCard(c, s.flipMap));
+    s.hands = s.hands.map(hand => hand.map(c => flipCard(c, s.flipMap)));
+    s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
   }
 
   if (hand.length === 0) {
@@ -474,8 +477,26 @@ export function playCard(
     return s;
   }
 
-  // Do NOT advance turn here; set skipNext flag for later use by endTurn
-  s.skipNext = skipNext;
+  // ── Same‑card combo check ──
+  const canCombo = s.houseRules.sameCardCombo && hand.some(
+    c => c.color === card.color && c.value === card.value && c.color !== "wild"
+  );
+
+  if (!canCombo) {
+    // If this card would skip the next player, queue the skip for after combo ends.
+    if (skipNext) {
+      s.queuedSkipNext = true;
+    }
+    s = endTurn(s, playerIdx);
+  } else {
+    // Combo allowed → stay on the same player, do NOT end turn.
+    // The skip effect (if any) is queued for the next player after the combo finishes.
+    if (skipNext) {
+      s.queuedSkipNext = true;
+      skipNext = false;
+    }
+  }
+
   return s;
 }
 
@@ -545,14 +566,19 @@ export function drawSingle(state: GameState, playerIdx: number): GameState {
   return s;
 }
 
-
-// Modify endTurn to use skipNext
 export function endTurn(state: GameState, playerIdx: number): GameState {
   if (state.winner !== null || state.pendingAction !== null) return state;
   if (playerIdx !== state.currentPlayer) return state;
   const s = cloneState(state);
+
+  // Apply a queued skip that was produced by an action card during a combo.
+  if (s.queuedSkipNext) {
+    s.skipNext = true;
+    s.queuedSkipNext = false;
+  }
+
   if (s.skipNext) {
-    s.currentPlayer = nextPlayer(s, true);   // skip one player
+    s.currentPlayer = nextPlayer(s, true);
     s.skipNext = false;
   } else {
     s.currentPlayer = nextPlayer(s);
@@ -681,5 +707,6 @@ function cloneState(s: GameState): GameState {
     skipNext: s.skipNext,  // ← add this
     // inside cloneState
     flipMap: { ...s.flipMap },
+    queuedSkipNext: s.queuedSkipNext,
   };
 }
