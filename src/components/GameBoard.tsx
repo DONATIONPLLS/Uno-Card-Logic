@@ -343,7 +343,8 @@ useEffect(() => {
       case "flip": msg = "FLIP!"; heavy = true; break;
     }
     if (msg) {
-      const c: UnoColor | "white" = (top.color as WildColor) === "wild"    ? game.activeColor    : (top.color as UnoColor);
+      const topColor: WildColor = top.color;
+const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor as UnoColor;
       setAnnouncement({ text: msg, color: c });
       if (heavy) { sfx.impact(); haptics.heavy(); }
       const t = setTimeout(() => setAnnouncement(null), 1500);
