@@ -123,28 +123,6 @@ export function buildDeck(mode: GameMode, allWild = false): { lightDeck: UnoCard
   return { lightDeck: light, darkDeck: dark, flipMap };
 }
 
-// Remove the old NUMBERS, ACTIONS, and the previous buildDeck if present.
-// The dealNewGame function should already look like this:
-export function dealNewGame(opts: NewGameOptions): GameState {
-  const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
-  const players = opts.players;
-  const { lightDeck, flipMap } = buildDeck(opts.mode ?? "standard", houseRules.allWild);
-  let deck = shuffle(lightDeck);
-  const hands: UnoCard[][] = [];
-  for (let p = 0; p < players.length; p++) {
-    hands.push(deck.splice(0, 7));
-  }
-  let first: UnoCard;
-  // ... rest of function unchanged ...
-  // Return the state with flipMap
-  return {
-    // ... all existing fields ...
-    flipMap,
-  };
-}
-
-
-
 export type PlayerKind = "human" | "bot";
 
 export interface PlayerConfig {
