@@ -344,7 +344,7 @@ useEffect(() => {
     }
     if (msg) {
       const topColor: WildColor = top.color;
-const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor as UnoColor;
+const c: UnoColor | "white" = (top.color as string) === "wild" ? game.activeColor : (top.color as UnoColor);
       setAnnouncement({ text: msg, color: c });
       if (heavy) { sfx.impact(); haptics.heavy(); }
       const t = setTimeout(() => setAnnouncement(null), 1500);
