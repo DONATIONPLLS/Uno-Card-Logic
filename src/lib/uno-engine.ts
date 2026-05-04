@@ -14,7 +14,7 @@ export interface UnoCard {
   color: WildColor;
   value: CardValue;
   darkId?: string;
-}.
+}
 
 // ── DECK BUILDER (replace the old buildDeck) ──
 let idCounter = 0;
