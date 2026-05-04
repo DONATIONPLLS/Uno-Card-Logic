@@ -41,8 +41,9 @@ const darkOvalColor: Record<WildColor, string> = {
 const cornerLabel: Record<CardValue, string> = {
   "0":"0","1":"1","2":"2","3":"3","4":"4","5":"5","6":"6","7":"7","8":"8","9":"9",
   skip:"⊘", reverse:"↺", draw2:"+2", wild:"★", wild4:"+4", flip:"⇄",
-  draw1:"+1", wild_draw2:"⊕2", draw_to_color:"?", skip_all:"⟳",
+  draw1:"+1", wild_draw2:"⊕2", draw_to_color:"?", skip_all:"⟳", draw5: "+5",   // <-- add this
 };
+
 
 export type CardSize = "sm" | "md" | "lg";
 
