@@ -277,12 +277,19 @@ export function isValidMove(
   if (rules.allWild) return true;
 
   // ── Pending draw: only stacking moves are legal ──
- if (pendingDraw > 0) {
+if (pendingDraw > 0) {
   if (!rules.stackDraws) return false;
-  // Only another +2 can be played on a +2, and only another +4 on a +4
+
+  // +2 on +2 or +4 on +4 (same value)
   if (topCard.value === "draw2" && card.value === "draw2") return true;
   if (topCard.value === "wild4" && card.value === "wild4") return true;
+
+  // +4 on +2 (as before)
   if (topCard.value === "draw2" && card.value === "wild4") return true;
+
+  // +2 on +4 if the +2's colour matches the active colour chosen for the wild4
+  if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) return true;
+
   return false;
 }
 
