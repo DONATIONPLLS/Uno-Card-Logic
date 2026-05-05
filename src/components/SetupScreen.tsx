@@ -178,7 +178,7 @@ export function SetupScreen({
             <h2 className="text-xs uppercase tracking-wider text-white/50 mb-2 font-semibold">
               House Rules
             </h2>
-         <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/10 max-h-60 overflow-y-auto">
+         <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/10 max-h-52 overflow-y-auto">
               <Toggle
                 label="Stacking +2 / +4"
                 hint="Pass the draw penalty by stacking"
