@@ -488,17 +488,23 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
       : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     if (!actualPlayable) return;
 
-    if (card.value === "wild" || card.value === "wild4") {
+const isNumberCard = (v: string) => /^[0-9]$/.test(v);
+
+// handle color picking (ONLY if your game actually has a wild-type value)
+if (card.value === "wild_draw2") {
   setPickColorFor(selectedId);
   return;
 }
 
 const canContinueCombo =
   game.houseRules.sameCardCombo &&
-  card.value !== "wild" &&
-  card.value !== "wild4" &&
+  isNumberCard(card.value) &&
   game.hands[handViewIdx].some(
-    (c) => c.id !== card.id && c.color === card.color && c.value === card.value
+    (c) =>
+      c.id !== card.id &&
+      isNumberCard(c.value) &&
+      c.color === card.color &&
+      c.value === card.value
   );
 
     captureOriginFor(selectedId);
