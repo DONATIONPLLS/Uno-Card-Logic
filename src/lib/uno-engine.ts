@@ -396,7 +396,7 @@ export function nextPlayer(state: GameState, skip = false): number {
   return ((state.currentPlayer + step) % n + n) % n;
 }
 
-export function playCard(
+export function d(
   state: GameState,
   playerIdx: number,
   cardId: string,
@@ -497,7 +497,7 @@ if (skipNext) {
 }
 
 return s;
-
+}
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
   if (state.pendingAction?.type !== "swap7") return state;
@@ -707,4 +707,3 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
-}
