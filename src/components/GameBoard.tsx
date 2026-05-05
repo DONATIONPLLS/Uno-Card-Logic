@@ -488,14 +488,18 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
       : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     if (!actualPlayable) return;
 
-    if (card.value === "wild") { setPickColorFor(selectedId); return; }
+    if (card.value === "wild" || card.value === "wild4") {
+  setPickColorFor(selectedId);
+  return;
+}
 
-    const canContinueCombo =
-      game.houseRules.sameCardCombo &&
-      card.value !== "wild" &&
-      game.hands[handViewIdx].some(
-        (c) => c.id !== card.id && c.color === card.color && c.value === card.value
-      );
+const canContinueCombo =
+  game.houseRules.sameCardCombo &&
+  card.value !== "wild" &&
+  card.value !== "wild4" &&
+  game.hands[handViewIdx].some(
+    (c) => c.id !== card.id && c.color === card.color && c.value === card.value
+  );
 
     captureOriginFor(selectedId);
     sfx.swish(); haptics.medium();
