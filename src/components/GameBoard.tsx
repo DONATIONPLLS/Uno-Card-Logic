@@ -305,10 +305,11 @@ useEffect(() => {
     pendingPlayFlight.current = true;
     const ids = newFlights.map((f) => f.id);
     const t = setTimeout(() => {
-      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
-      if (newTopSuppress) setSuppressedTopId(null);
-      pendingPlayFlight.current = false;
-    }, 520);
+  setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
+  if (newTopSuppress) setSuppressedTopId(null);
+  pendingPlayFlight.current = false;
+  act.endTurn();
+}, 520);
     return () => clearTimeout(t);
   }, [game, handViewIdx]);
 
@@ -479,45 +480,42 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   };
 
   const confirmPlay = () => {
-    if (!selectedId) return;
-    const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
-    if (!card) return;
+  if (!selectedId) return;
+  const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
+  if (!card) return;
 
-    const actualPlayable = comboActive
-      ? (card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo)
-      : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
-    if (!actualPlayable) return;
+  const actualPlayable = comboActive
+    ? card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo
+    : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
 
-const isNumberCard = (v: string) => /^[0-9]$/.test(v);
+  if (!actualPlayable) return;
 
-// handle color picking (ONLY if your game actually has a wild-type value)
-if (card.value === "wild_draw2") {
-  setPickColorFor(selectedId);
-  return;
-}
+  const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
-const canContinueCombo =
-  game.houseRules.sameCardCombo &&
-  isNumberCard(card.value) &&
-  game.hands[handViewIdx].some(
-    (c) =>
-      c.id !== card.id &&
-      isNumberCard(c.value) &&
-      c.color === card.color &&
-      c.value === card.value
-  );
+  // wild / color-pick cards use the wild color, not a special value check
+  if (card.color === "wild") {
+    setPickColorFor(selectedId);
+    return;
+  }
 
-    captureOriginFor(selectedId);
-    sfx.swish(); haptics.medium();
-    act.play(selectedId);
-    setSelectedId(null);
+  const canContinueCombo =
+    game.houseRules.sameCardCombo &&
+    isNumberCard(card.value) &&
+    game.hands[handViewIdx].some(
+      (c) =>
+        c.id !== card.id &&
+        isNumberCard(c.value) &&
+        c.color === card.color &&
+        c.value === card.value
+    );
 
-    if (canContinueCombo) {
-      setComboActive(true);
-    } else {
-      setComboActive(false);
-    }
-  };
+  captureOriginFor(selectedId);
+  sfx.swish();
+  haptics.medium();
+  act.play(selectedId);
+  setSelectedId(null);
+  setComboActive(canContinueCombo);
+};
 
   const handlePickColor = (color: UnoColor) => {
     if (!pickColorFor) return;
@@ -535,23 +533,46 @@ const canContinueCombo =
     act.endTurn();
   };
 
+const resolvePenaltyDraw = () => {
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (isDrawing || selectedId) return;
+
+  setDrawArmed(false);
+  setHasDrawnThisTurn(true);
+  setComboActive(false);
+
+  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+  startDrawAnimation(handViewIdx, cardsToDraw, () => {
+    act.endTurn();
+  });
+};
+
   const onDrawPileTap = () => {
-    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-    if (isDrawing || comboActive) return;
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (isDrawing) return;
 
-    if (selectedId) { setSelectedId(null); return; }
-    if (hasDrawnThisTurn) return;
+  if (game.pendingDraw > 0) {
+    resolvePenaltyDraw();
+    return;
+  }
 
-    if (!drawArmed) {
-      sfx.click(); haptics.light(); setDrawArmed(true); return;
-    }
+  if (comboActive) return;
 
-    setDrawArmed(false);
-    setHasDrawnThisTurn(true);
-    setComboActive(false);
-    const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-    startDrawAnimation(handViewIdx, cardsToDraw);
-  };
+  if (selectedId) { setSelectedId(null); return; }
+  if (hasDrawnThisTurn) return;
+
+  if (!drawArmed) {
+    sfx.click();
+    haptics.light();
+    setDrawArmed(true);
+    return;
+  }
+
+  setDrawArmed(false);
+  setHasDrawnThisTurn(true);
+  setComboActive(false);
+  startDrawAnimation(handViewIdx, 1);
+};
 
   const onPickSwap = (targetIdx: number) => {
     haptics.medium();
@@ -575,13 +596,12 @@ const canContinueCombo =
   const myHand = game.hands[handViewIdx] ?? [];
 
   const canEndTurn =
-    myTurn &&
-    !isDrawing &&
-    game.pendingAction === null &&
-    !pickColorFor &&
-    !swapPickerFor &&
-    hasDrawnThisTurn &&
-    !comboActive;
+  myTurn &&
+  !isDrawing &&
+  game.pendingAction === null &&
+  !pickColorFor &&
+  !swapPickerFor &&
+  (hasDrawnThisTurn || comboActive);
 
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
@@ -652,6 +672,14 @@ const canContinueCombo =
               +{game.pendingDraw}
             </span>
           ) : null}
+          {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
+  <button
+    onClick={resolvePenaltyDraw}
+    className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
+  >
+    Draw +{game.pendingDraw}
+  </button>
+) : null}
           {flipMode && game.gameSide === "dark" ? (
             <span className="px-2 py-0.5 rounded bg-purple-500/40 text-purple-100 text-[10px] font-bold shrink-0">
               DARK
