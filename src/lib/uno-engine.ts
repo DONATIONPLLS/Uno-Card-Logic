@@ -706,4 +706,5 @@ export function cloneState(s: GameState): GameState {
     queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
   };
+ }
 }
