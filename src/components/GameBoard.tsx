@@ -753,80 +753,82 @@ const canEndTurn =
           ) : null}
         </div>
 
-<div className="relative flex items-center justify-center">
-  {/* Outer circle */}
-  <div className="w-32 h-32 rounded-full border-2 border-white/20 flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.05)]">
-    {/* Direction arrow */}
-    <div
-      className="absolute w-24 h-24 pointer-events-none"
-      style={{
-        transform: `rotate(${game.direction === 1 ? 0 : 180}deg)`,
-        transition: "transform 0.3s ease",
-      }}
-    >
-      <svg viewBox="0 0 100 100" className="w-full h-full">
-        <path
-          d="M50 20 L65 50 L55 50 L55 80 L45 80 L45 50 L35 50 Z"
-          fill="white"
-          opacity={0.4}
-        />
-      </svg>
-    </div>
-
-    {/* Draw pile */}
-    <div className="absolute left-2 top-1/2 -translate-y-1/2">
-      <button
-        onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
-        disabled={
-          !myTurn ||
-          !revealed ||
-          hasDrawnThisTurn ||
-          game.pendingAction !== null ||
-          viewerIsBot ||
-          isDrawing ||
-          comboActive
-        }
-        className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-          myTurn &&
-          revealed &&
-          !hasDrawnThisTurn &&
-          game.pendingAction === null &&
-          !viewerIsBot &&
-          !isDrawing &&
-          !comboActive
-            ? "active:scale-95"
-            : "opacity-70"
-        } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
+<div className="row-start-2 col-start-2 flex items-center justify-center">
+  <div className="relative flex items-center justify-center">
+    {/* Outer circle */}
+    <div className="w-32 h-32 rounded-full border-2 border-white/20 flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.05)]">
+      {/* Direction arrow */}
+      <div
+        className="absolute w-24 h-24 pointer-events-none"
+        style={{
+          transform: `rotate(${game.direction === 1 ? 0 : 180}deg)`,
+          transition: "transform 0.3s ease",
+        }}
       >
-        <div ref={drawPileRef}>
-          <UnoCardView
-            card={{ id: "back", color: "wild", value: "wild" }}
-            faceDown
-            flipMode={flipMode}
-            size="sm"
-            darkSide={backDarkSide}
-            flipMap={game.flipMap}
+        <svg viewBox="0 0 100 100" className="w-full h-full">
+          <path
+            d="M50 20 L65 50 L55 50 L55 80 L45 80 L45 50 L35 50 Z"
+            fill="white"
+            opacity={0.4}
           />
-        </div>
-        <span className="text-[10px] text-white/70">
-          {hasDrawnThisTurn
-            ? "Drew"
-            : drawArmed && game.pendingDraw > 0
-              ? `Draw ${game.pendingDraw}`
-              : drawArmed
-                ? "Tap again"
-                : "Draw"} ({game.drawPile.length})
-        </span>
-      </button>
-    </div>
+        </svg>
+      </div>
 
-    {/* Discard pile */}
-    <div className="absolute right-2 top-1/2 -translate-y-1/2">
-      <motion.div ref={discardRef} key={visibleTop.id}>
-        <UnoCardView card={visibleTop} disabled size="sm" highlightColor={game.activeColor} darkSide={darkSide}
-          flipMap={game.flipMap} />
-      </motion.div>
-      <span className="text-[10px] text-white/60 block text-center">Top</span>
+      {/* Draw pile */}
+      <div className="absolute left-2 top-1/2 -translate-y-1/2">
+        <button
+          onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+          disabled={
+            !myTurn ||
+            !revealed ||
+            hasDrawnThisTurn ||
+            game.pendingAction !== null ||
+            viewerIsBot ||
+            isDrawing ||
+            comboActive
+          }
+          className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
+            myTurn &&
+            revealed &&
+            !hasDrawnThisTurn &&
+            game.pendingAction === null &&
+            !viewerIsBot &&
+            !isDrawing &&
+            !comboActive
+              ? "active:scale-95"
+              : "opacity-70"
+          } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
+        >
+          <div ref={drawPileRef}>
+            <UnoCardView
+              card={{ id: "back", color: "wild", value: "wild" }}
+              faceDown
+              flipMode={flipMode}
+              size="sm"
+              darkSide={backDarkSide}
+              flipMap={game.flipMap}
+            />
+          </div>
+          <span className="text-[10px] text-white/70">
+            {hasDrawnThisTurn
+              ? "Drew"
+              : drawArmed && game.pendingDraw > 0
+                ? `Draw ${game.pendingDraw}`
+                : drawArmed
+                  ? "Tap again"
+                  : "Draw"} ({game.drawPile.length})
+          </span>
+        </button>
+      </div>
+
+      {/* Discard pile */}
+      <div className="absolute right-2 top-1/2 -translate-y-1/2">
+        <motion.div ref={discardRef} key={visibleTop.id}>
+          <UnoCardView card={visibleTop} disabled size="sm" highlightColor={game.activeColor} darkSide={darkSide}
+            flipMap={game.flipMap} />
+        </motion.div>
+        <span className="text-[10px] text-white/60 block text-center">Top</span>
+      </div>
     </div>
   </div>
 </div>
@@ -921,8 +923,8 @@ const canEndTurn =
       End Turn
     </button>
   ) : null}
+ </div>
 </div>
-
         <div
           ref={handZoneRef}
           className="px-3 scroll-smooth"
