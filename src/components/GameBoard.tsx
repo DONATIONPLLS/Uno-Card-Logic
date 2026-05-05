@@ -551,7 +551,14 @@ const resolvePenaltyDraw = () => {
   if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
   if (isDrawing) return;
 
+  // Penalty draw: require two taps
   if (game.pendingDraw > 0) {
+    if (!drawArmed) {
+      sfx.click();
+      haptics.light();
+      setDrawArmed(true);
+      return;
+    }
     resolvePenaltyDraw();
     return;
   }
@@ -574,6 +581,7 @@ const resolvePenaltyDraw = () => {
   startDrawAnimation(handViewIdx, 1);
 };
 
+
   const onPickSwap = (targetIdx: number) => {
     haptics.medium();
     act.resolveSwap(targetIdx);
@@ -595,7 +603,7 @@ const resolvePenaltyDraw = () => {
 
   const myHand = game.hands[handViewIdx] ?? [];
 
-  const canEndTurn =
+const canEndTurn =
   myTurn &&
   !isDrawing &&
   game.pendingAction === null &&
@@ -745,56 +753,83 @@ const resolvePenaltyDraw = () => {
           ) : null}
         </div>
 
-        <div
-          className="row-start-2 col-start-2 flex items-center justify-center gap-4"
-          onClick={() => { setSelectedId(null); setDrawArmed(false); }}
-        >
-          <button
-            onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
-            disabled={
-              !myTurn ||
-              !revealed ||
-              hasDrawnThisTurn ||
-              game.pendingAction !== null ||
-              viewerIsBot ||
-              isDrawing ||
-              comboActive
-            }
-            className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-              myTurn &&
-              revealed &&
-              !hasDrawnThisTurn &&
-              game.pendingAction === null &&
-              !viewerIsBot &&
-              !isDrawing &&
-              !comboActive
-                ? "active:scale-95"
-                : "opacity-70"
-            } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
-          >
-            <div ref={drawPileRef}>
-              <UnoCardView
-                card={{ id: "back", color: "wild", value: "wild" }}
-                faceDown
-                flipMode={flipMode}
-                size="md"
-                darkSide={backDarkSide}
-                flipMap={game.flipMap}
-              />
-            </div>
-            <span className="text-[10px] text-white/70">
-              {hasDrawnThisTurn ? "Drew" : drawArmed ? "Tap again" : "Draw"} ({game.drawPile.length})
-            </span>
-          </button>
+<div className="relative flex items-center justify-center">
+  {/* Outer circle */}
+  <div className="w-32 h-32 rounded-full border-2 border-white/20 flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.05)]">
+    {/* Direction arrow */}
+    <div
+      className="absolute w-24 h-24 pointer-events-none"
+      style={{
+        transform: `rotate(${game.direction === 1 ? 0 : 180}deg)`,
+        transition: "transform 0.3s ease",
+      }}
+    >
+      <svg viewBox="0 0 100 100" className="w-full h-full">
+        <path
+          d="M50 20 L65 50 L55 50 L55 80 L45 80 L45 50 L35 50 Z"
+          fill="white"
+          opacity={0.4}
+        />
+      </svg>
+    </div>
 
-          <div className="flex flex-col items-center gap-1">
-            <motion.div ref={discardRef} key={visibleTop.id}>
-              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide}
-                flipMap={game.flipMap} />
-            </motion.div>
-            <span className="text-[10px] text-white/60">Top</span>
-          </div>
+    {/* Draw pile */}
+    <div className="absolute left-2 top-1/2 -translate-y-1/2">
+      <button
+        onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+        disabled={
+          !myTurn ||
+          !revealed ||
+          hasDrawnThisTurn ||
+          game.pendingAction !== null ||
+          viewerIsBot ||
+          isDrawing ||
+          comboActive
+        }
+        className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
+          myTurn &&
+          revealed &&
+          !hasDrawnThisTurn &&
+          game.pendingAction === null &&
+          !viewerIsBot &&
+          !isDrawing &&
+          !comboActive
+            ? "active:scale-95"
+            : "opacity-70"
+        } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
+      >
+        <div ref={drawPileRef}>
+          <UnoCardView
+            card={{ id: "back", color: "wild", value: "wild" }}
+            faceDown
+            flipMode={flipMode}
+            size="sm"
+            darkSide={backDarkSide}
+            flipMap={game.flipMap}
+          />
         </div>
+        <span className="text-[10px] text-white/70">
+          {hasDrawnThisTurn
+            ? "Drew"
+            : drawArmed && game.pendingDraw > 0
+              ? `Draw ${game.pendingDraw}`
+              : drawArmed
+                ? "Tap again"
+                : "Draw"} ({game.drawPile.length})
+        </span>
+      </button>
+    </div>
+
+    {/* Discard pile */}
+    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+      <motion.div ref={discardRef} key={visibleTop.id}>
+        <UnoCardView card={visibleTop} disabled size="sm" highlightColor={game.activeColor} darkSide={darkSide}
+          flipMap={game.flipMap} />
+      </motion.div>
+      <span className="text-[10px] text-white/60 block text-center">Top</span>
+    </div>
+  </div>
+</div>
 
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
@@ -841,30 +876,52 @@ const resolvePenaltyDraw = () => {
             <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
 
-          {/* Buttons */}
-          {canEndTurn && !selectedId ? (
-            <button
-              onClick={onPass}
-              className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
-            >
-              End Turn
-            </button>
-          ) : selectedId && selectedPlayable ? (
-            <button
-              onClick={confirmPlay}
-              className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
-            >
-              ✓ Play Card
-            </button>
-          ) : selectedId ? (
-            <button
-              onClick={() => setSelectedId(null)}
-              className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
+{/* -- Action Buttons -- */}
+<div className="flex items-center gap-2">
+  {/* Penalty draw button – only when it's this player's pending draw */}
+  {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
+    <button
+      onClick={resolvePenaltyDraw}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
+    >
+      Draw +{game.pendingDraw}
+    </button>
+  ) : null}
+
+  {canEndTurn && !selectedId ? (
+    <button
+      onClick={onPass}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
+    >
+      End Turn
+    </button>
+  ) : selectedId && selectedPlayable ? (
+    <button
+      onClick={confirmPlay}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+    >
+      ✓ Play Card
+    </button>
+  ) : selectedId ? (
+    <button
+      onClick={() => setSelectedId(null)}
+      className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
+    >
+      Cancel
+    </button>
+  ) : null}
+
+  {/* During a combo, always show End Turn even if a card is selected */}
+  {comboActive && !canEndTurn && !selectedId ? null : null}
+  {comboActive && selectedId ? (
+    <button
+      onClick={onPass}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
+    >
+      End Turn
+    </button>
+  ) : null}
+</div>
 
         <div
           ref={handZoneRef}
