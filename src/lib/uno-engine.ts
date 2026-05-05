@@ -396,7 +396,7 @@ export function nextPlayer(state: GameState, skip = false): number {
   return ((state.currentPlayer + step) % n + n) % n;
 }
 
-export function d(
+export function playCard(
   state: GameState,
   playerIdx: number,
   cardId: string,
