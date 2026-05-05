@@ -685,7 +685,7 @@ export function chooseBotSwapTarget(state: GameState): number {
   return best;
 }
 
-function cloneState(s: GameState): GameState {
+export function cloneState(s: GameState): GameState {
   return {
     drawPile: [...s.drawPile],
     discardPile: [...s.discardPile],
@@ -706,5 +706,4 @@ function cloneState(s: GameState): GameState {
     queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
   };
- }
 }
