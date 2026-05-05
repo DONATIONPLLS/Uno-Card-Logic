@@ -476,9 +476,17 @@ export function playCard(
     return s;
   }
 
-  // ── Same‑card combo check ──
-  const canCombo = s.houseRules.sameCardCombo && hand.some(
-    c => c.color === card.color && c.value === card.value && c.color !== "wild"
+const isNumberCard = (v: string) => /^[0-9]$/.test(v);
+
+const canCombo =
+  s.houseRules.sameCardCombo &&
+  isNumberCard(card.value) &&
+  hand.some(
+    (c) =>
+      c.id !== card.id &&
+      c.color === card.color &&
+      c.value === card.value &&
+      isNumberCard(c.value)
   );
 
   if (!canCombo) {
