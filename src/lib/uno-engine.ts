@@ -485,27 +485,18 @@ const canCombo =
     (c) =>
       c.id !== card.id &&
       c.color === card.color &&
-      c.value === card.value &&
-      isNumberCard(c.value)
+      c.value === card.value
   );
 
-  if (!canCombo) {
-    // If this card would skip the next player, queue the skip for after combo ends.
-    if (skipNext) {
-      s.queuedSkipNext = true;
-    }
-    s = endTurn(s, playerIdx);
-  } else {
-    // Combo allowed → stay on the same player, do NOT end turn.
-    // The skip effect (if any) is queued for the next player after the combo finishes.
-    if (skipNext) {
-      s.queuedSkipNext = true;
-      skipNext = false;
-    }
+if (skipNext) {
+  s.queuedSkipNext = true;
+  if (canCombo) {
+    // keep turn on the same player for combo chaining
+    skipNext = false;
   }
-
-  return s;
 }
+
+return s;
 
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
