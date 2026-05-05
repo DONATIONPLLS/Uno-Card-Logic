@@ -5,6 +5,7 @@ import {
   endTurn,
   playCard,
   resolveSwap,
+  drawPenaltyThenEnd,
   type GameMode,
   type GameState,
   type HouseRules,
@@ -93,7 +94,9 @@ function App() {
         }
         const a = msg.action;
         if (a.kind === "play") return playCard(g, peerIdx, a.cardId, a.color);
-        if (a.kind === "draw") return drawOne(g, peerIdx);
+        if (a.kind === "draw") {
+  return g.pendingDraw > 0 ? drawPenaltyThenEnd(g, peerIdx) : drawOne(g, peerIdx);
+}
         if (a.kind === "endTurn") return endTurn(g, peerIdx);
         if (a.kind === "swap") return resolveSwap(g, a.targetIdx);
         return g;
