@@ -214,6 +214,7 @@ export interface GameState {
   skipNext: boolean;
   flipMap: Record<string, UnoCard>; //new
   queuedSkipNext: boolean;   // <-- add this
+  pendingDrawFrom: number | null;
 }
 
 
@@ -280,15 +281,13 @@ export function isValidMove(
 if (pendingDraw > 0) {
   if (!rules.stackDraws) return false;
 
-  // +2 on +2 or +4 on +4 (same value)
   if (topCard.value === "draw2" && card.value === "draw2") return true;
   if (topCard.value === "wild4" && card.value === "wild4") return true;
-
-  // +4 on +2 (as before)
   if (topCard.value === "draw2" && card.value === "wild4") return true;
 
-  // +2 on +4 – only if the +2's colour matches the active colour chosen for the wild4
-  if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) return true;
+  if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) {
+    return true;
+  }
 
   return false;
 }
@@ -351,8 +350,9 @@ export function dealNewGame(opts: NewGameOptions): GameState {
         ? [...opts.previousScores]
         : new Array(players.length).fill(0),
     skipNext: false,
-flipMap,
-queuedSkipNext: false,
+    flipMap,
+    queuedSkipNext: false,
+    pendingDrawFrom: null,
   };
 }
 
@@ -456,11 +456,13 @@ export function playCard(
       if (s.hands.length === 2) skipNext = true;
       break;
     case "draw2":
-      s.pendingDraw += 2;
-      break;
-    case "wild4":
-      s.pendingDraw += 4;
-      break;
+  s.pendingDraw += 2;
+  s.pendingDrawFrom = playerIdx;
+  break;
+case "wild4":
+  s.pendingDraw += 4;
+  s.pendingDrawFrom = playerIdx;
+  break;
   }
 
   if (s.houseRules.sevenZero && card.value === "0") {
@@ -492,21 +494,28 @@ const canCombo =
     (c) =>
       c.id !== card.id &&
       c.color === card.color &&
-      c.value === card.value
+      c.value === card.value &&
+      isNumberCard(c.value)
   );
 
-if (skipNext) {
-  s.queuedSkipNext = true;
+  if (!canCombo) {
+    // If this card would skip the next player, queue the skip for after combo ends.
+    if (skipNext) {
+      s.queuedSkipNext = true;
+    }
+    s = endTurn(s, playerIdx);
+  } else {
+    // Combo allowed → stay on the same player, do NOT end turn.
+    // The skip effect (if any) is queued for the next player after the combo finishes.
+    if (skipNext) {
+      s.queuedSkipNext = true;
+      skipNext = false;
+    }
+  }
+
+  return s;
 }
 
-// DON'T auto-end-turn when a combo is possible – let the UI handle it
-if (!canCombo) {
-  s = endTurn(s, playerIdx);
-}
-// If canCombo is true, the turn stays on the current player
-
-return s;
-}
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
   if (state.pendingAction?.type !== "swap7") return state;
@@ -598,18 +607,15 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
  * This mirrors the official rule: the victim draws and is skipped.
  */
 export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
-  // Draw the required cards (same logic as drawOne but we force endTurn)
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
 
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
   s.pendingDraw = 0;
+  s.pendingDrawFrom = null;
 
-  // Log the draw
   s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
-
-  // Now skip the player
   s.currentPlayer = nextPlayer(s);
   return s;
 }
@@ -694,7 +700,7 @@ export function chooseBotSwapTarget(state: GameState): number {
   return best;
 }
 
-export function cloneState(s: GameState): GameState {
+function cloneState(s: GameState): GameState {
   return {
     drawPile: [...s.drawPile],
     discardPile: [...s.discardPile],
@@ -715,4 +721,4 @@ export function cloneState(s: GameState): GameState {
     queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
   };
- }
+}
