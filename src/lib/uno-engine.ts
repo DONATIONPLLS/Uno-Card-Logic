@@ -720,5 +720,6 @@ function cloneState(s: GameState): GameState {
     skipNext: s.skipNext,
     queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
+    pendingDrawFrom: null,
   };
 }
