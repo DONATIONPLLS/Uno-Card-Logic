@@ -675,7 +675,13 @@ const resolvePenaltyDraw = () => {
               +{game.pendingDraw}
             </span>
           ) : null}
-          {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
+{game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
+  <button
+    onClick={resolvePenaltyDraw}
+    className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
+  >
+    Draw +{game.pendingDraw}
+  </button>
 ) : null}
           {flipMode && game.gameSide === "dark" ? (
             <span className="px-2 py-0.5 rounded bg-purple-500/40 text-purple-100 text-[10px] font-bold shrink-0">
