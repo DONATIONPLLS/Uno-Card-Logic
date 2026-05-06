@@ -744,21 +744,24 @@ const resolvePenaltyDraw = () => {
 
 <div
   className="row-start-2 col-start-2 flex items-center justify-center"
-  onClick={() => { setSelectedId(null); setDrawArmed(false); }}
+  onClick={() => {
+    setSelectedId(null);
+    setDrawArmed(false);
+  }}
 >
   <div className="relative w-56 h-56 rounded-full border border-white/15 bg-white/5 flex items-center justify-center">
-
-    {/* spinning ring */}
     <motion.div
       className="absolute inset-4 rounded-full border border-white/10 border-dashed"
       animate={{ rotate: game.direction === 1 ? 0 : 180 }}
       transition={{ duration: 0.5, ease: "easeInOut" }}
     />
 
-    {/* DRAW PILE (LEFT) */}
     <div className="absolute left-6">
       <button
-        onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDrawPileTap();
+        }}
         disabled={
           !myTurn ||
           !revealed ||
@@ -790,7 +793,6 @@ const resolvePenaltyDraw = () => {
             flipMap={game.flipMap}
           />
         </div>
-
         <span className="text-[10px] text-white/70">
           {game.pendingDraw > 0
             ? `Draw +${game.pendingDraw}`
@@ -803,13 +805,8 @@ const resolvePenaltyDraw = () => {
       </button>
     </div>
 
-    {/* DISCARD PILE (RIGHT) */}
     <div className="absolute right-6 flex flex-col items-center gap-1">
-      <motion.div
-        ref={discardRef}
-        key={visibleTop.id}
-        whileHover={{ scale: 1.05 }}
-      >
+      <motion.div ref={discardRef} key={visibleTop.id} whileHover={{ scale: 1.05 }}>
         <UnoCardView
           card={visibleTop}
           disabled
@@ -819,11 +816,9 @@ const resolvePenaltyDraw = () => {
           flipMap={game.flipMap}
         />
       </motion.div>
-
       <span className="text-[10px] text-white/60">Top</span>
     </div>
 
-    {/* CENTER ARROW */}
     <motion.div
       className="absolute text-white/70 text-2xl"
       animate={{ rotate: game.direction === 1 ? 0 : 180 }}
@@ -831,7 +826,6 @@ const resolvePenaltyDraw = () => {
     >
       ↻
     </motion.div>
-
   </div>
 </div>
 
