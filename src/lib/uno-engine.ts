@@ -287,7 +287,7 @@ if (pendingDraw > 0) {
   // +4 on +2 (as before)
   if (topCard.value === "draw2" && card.value === "wild4") return true;
 
-  // +2 on +4 if the +2's colour matches the active colour chosen for the wild4
+  // +2 on +4 – only if the +2's colour matches the active colour chosen for the wild4
   if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) return true;
 
   return false;
@@ -497,11 +497,13 @@ const canCombo =
 
 if (skipNext) {
   s.queuedSkipNext = true;
-  if (canCombo) {
-    // keep turn on the same player for combo chaining
-    skipNext = false;
-  }
 }
+
+// DON'T auto-end-turn when a combo is possible – let the UI handle it
+if (!canCombo) {
+  s = endTurn(s, playerIdx);
+}
+// If canCombo is true, the turn stays on the current player
 
 return s;
 }
