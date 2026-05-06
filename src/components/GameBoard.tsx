@@ -417,6 +417,19 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     };
   }, []);
 
+// Reset hasDrawnThisTurn when the turn comes back to the same player (skip/reverse in 1v1)
+useEffect(() => {
+  if (currentIdx === handViewIdx && !isDrawing && game.pendingAction === null && game.winner === null) {
+    // This effect fires when currentIdx changes to the viewer. 
+    // The pass-and-play overlay already resets these, but for non-pass-and-play
+    // we reset hasDrawnThisTurn so the player gets a fresh turn.
+    if (!isPassAndPlay && currentIdx === handViewIdx) {
+      setHasDrawnThisTurn(false);
+      setDrawArmed(false);
+    }
+  }
+}, [currentIdx, handViewIdx, isPassAndPlay, isDrawing, game.pendingAction, game.winner]);
+
   // Bot loop
   useEffect(() => {
     if (!enableBots || game.winner || isDrawing || pendingPlayFlight.current) return;
@@ -680,14 +693,6 @@ const canEndTurn =
               +{game.pendingDraw}
             </span>
           ) : null}
-          {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
-  <button
-    onClick={resolvePenaltyDraw}
-    className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
-  >
-    Draw +{game.pendingDraw}
-  </button>
-) : null}
           {flipMode && game.gameSide === "dark" ? (
             <span className="px-2 py-0.5 rounded bg-purple-500/40 text-purple-100 text-[10px] font-bold shrink-0">
               DARK
@@ -755,27 +760,25 @@ const canEndTurn =
 
 <div className="row-start-2 col-start-2 flex items-center justify-center">
   <div className="relative flex items-center justify-center">
-    {/* Outer circle */}
-    <div className="w-32 h-32 rounded-full border-2 border-white/20 flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.05)]">
-      {/* Direction arrow */}
-      <div
-        className="absolute w-24 h-24 pointer-events-none"
-        style={{
-          transform: `rotate(${game.direction === 1 ? 0 : 180}deg)`,
-          transition: "transform 0.3s ease",
-        }}
+    {/* Outer circle – no border, larger */}
+    <div className="w-44 h-44 rounded-full bg-white/[0.03] flex items-center justify-center shadow-[0_0_60px_rgba(255,255,255,0.03)]">
+      {/* Direction arrow – animated */}
+      <motion.div
+        className="absolute w-28 h-28 pointer-events-none"
+        animate={{ rotate: game.direction === 1 ? 0 : 180 }}
+        transition={{ type: "spring", stiffness: 200, damping: 20 }}
       >
         <svg viewBox="0 0 100 100" className="w-full h-full">
           <path
-            d="M50 20 L65 50 L55 50 L55 80 L45 80 L45 50 L35 50 Z"
+            d="M50 15 L68 52 L56 52 L56 85 L44 85 L44 52 L32 52 Z"
             fill="white"
-            opacity={0.4}
+            opacity={0.35}
           />
         </svg>
-      </div>
+      </motion.div>
 
       {/* Draw pile */}
-      <div className="absolute left-2 top-1/2 -translate-y-1/2">
+      <div className="absolute left-1 top-1/2 -translate-y-1/2">
         <button
           onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
           disabled={
@@ -804,7 +807,7 @@ const canEndTurn =
               card={{ id: "back", color: "wild", value: "wild" }}
               faceDown
               flipMode={flipMode}
-              size="sm"
+              size="md"
               darkSide={backDarkSide}
               flipMap={game.flipMap}
             />
@@ -822,9 +825,9 @@ const canEndTurn =
       </div>
 
       {/* Discard pile */}
-      <div className="absolute right-2 top-1/2 -translate-y-1/2">
+      <div className="absolute right-1 top-1/2 -translate-y-1/2">
         <motion.div ref={discardRef} key={visibleTop.id}>
-          <UnoCardView card={visibleTop} disabled size="sm" highlightColor={game.activeColor} darkSide={darkSide}
+          <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide}
             flipMap={game.flipMap} />
         </motion.div>
         <span className="text-[10px] text-white/60 block text-center">Top</span>
@@ -832,6 +835,7 @@ const canEndTurn =
     </div>
   </div>
 </div>
+
 
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
