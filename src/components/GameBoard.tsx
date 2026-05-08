@@ -236,21 +236,45 @@ export function GameBoard({
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-useEffect(() => {
-  setHasDrawnThisTurn(false);
-  setDrawArmed(false);
-  setComboActive(false);
-  setSelectedId(null);
-  setPickColorFor(null);
-}, [currentIdx]);
-
-
    // ── Reset combo when the turn changes or a draw happens ──
 useEffect(() => {
   if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
     setComboActive(false);
   }
 }, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
+
+// Auto‑draw when a human player is the victim and cannot stack (or stacking is off)
+useEffect(() => {
+  if (!myTurn || viewerIsBot || !revealed || game.winner) return;
+  if (game.pendingDraw <= 0) return;
+  if (isDrawing || game.pendingAction !== null || comboActive) return;
+
+  const canStack =
+    game.houseRules.stackDraws &&
+    game.hands[handViewIdx].some((c) =>
+      isValidMove(c, game.discardPile[game.discardPile.length - 1], game.activeColor, game.pendingDraw, game.houseRules)
+    );
+
+  if (!canStack) {
+    const timer = setTimeout(() => {
+      setGame((prev) => drawPenaltyThenEnd(prev, handViewIdx));
+    }, 400);
+    return () => clearTimeout(timer);
+  }
+}, [myTurn, viewerIsBot, revealed, game.pendingDraw, game.winner, isDrawing, game.pendingAction, comboActive, game.houseRules.stackDraws, game.discardPile, game.activeColor, handViewIdx, setGame]);
+
+// Reset hasDrawnThisTurn when the turn comes back to the viewer (new turn)
+useEffect(() => {
+  if (currentIdx === handViewIdx && game.winner === null && game.pendingAction === null && !isDrawing) {
+    // Only reset if we weren't already drawing (prevents loop)
+    if (prevTurnRef.current !== currentIdx || (prevTurnRef.current === currentIdx && !hasDrawnThisTurn)) {
+      // This is a fresh turn for the viewer
+      setHasDrawnThisTurn(false);
+      setDrawArmed(false);
+    }
+    prevTurnRef.current = currentIdx;
+  }
+}, [currentIdx, handViewIdx, game.winner, game.pendingAction, isDrawing, hasDrawnThisTurn]);
 
   // ── Card flight animations (play only) ──
   useEffect(() => {
@@ -499,25 +523,31 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   if (!actualPlayable) return;
 
-const isNumberCard = (v: string) => /^[0-9]$/.test(v);
+  const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
-const canContinueCombo =
-  game.houseRules.sameCardCombo &&
-  isNumberCard(card.value) &&
-  game.hands[handViewIdx].some(
-    (c) =>
-      c.id !== card.id &&
-      isNumberCard(c.value) &&
-      c.color === card.color &&
-      c.value === card.value
-  );
+  // wild / color-pick cards use the wild color, not a special value check
+  if (card.color === "wild") {
+    setPickColorFor(selectedId);
+    return;
+  }
 
-captureOriginFor(selectedId);
-sfx.swish();
-haptics.medium();
-act.play(selectedId);
-setSelectedId(null);
-setComboActive(canContinueCombo);
+  const canContinueCombo =
+    game.houseRules.sameCardCombo &&
+    isNumberCard(card.value) &&
+    game.hands[handViewIdx].some(
+      (c) =>
+        c.id !== card.id &&
+        isNumberCard(c.value) &&
+        c.color === card.color &&
+        c.value === card.value
+    );
+
+  captureOriginFor(selectedId);
+  sfx.swish();
+  haptics.medium();
+  act.play(selectedId);
+  setSelectedId(null);
+  setComboActive(canContinueCombo);
 };
 
   const handlePickColor = (color: UnoColor) => {
@@ -539,7 +569,7 @@ setComboActive(canContinueCombo);
 const resolvePenaltyDraw = () => {
   if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
   if (isDrawing || selectedId) return;
-  if (game.pendingDrawFrom === handViewIdx) return; // do not let the attacker self-resolve
+
   setDrawArmed(false);
   setHasDrawnThisTurn(true);
   setComboActive(false);
@@ -550,11 +580,18 @@ const resolvePenaltyDraw = () => {
   });
 };
 
-  const onDrawPileTap = () => {
+const onDrawPileTap = () => {
   if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
   if (isDrawing) return;
 
+  // Penalty draw: two‑tap confirmation + auto‑draw handled in effect
   if (game.pendingDraw > 0) {
+    if (!drawArmed) {
+      sfx.click();
+      haptics.light();
+      setDrawArmed(true);
+      return;
+    }
     resolvePenaltyDraw();
     return;
   }
@@ -675,14 +712,6 @@ const resolvePenaltyDraw = () => {
               +{game.pendingDraw}
             </span>
           ) : null}
-{game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
-  <button
-    onClick={resolvePenaltyDraw}
-    className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
-  >
-    Draw +{game.pendingDraw}
-  </button>
-) : null}
           {flipMode && game.gameSide === "dark" ? (
             <span className="px-2 py-0.5 rounded bg-purple-500/40 text-purple-100 text-[10px] font-bold shrink-0">
               DARK
@@ -748,92 +777,62 @@ const resolvePenaltyDraw = () => {
           ) : null}
         </div>
 
-<div
-  className="row-start-2 col-start-2 flex items-center justify-center"
-  onClick={() => {
-    setSelectedId(null);
-    setDrawArmed(false);
-  }}
->
-  <div className="relative w-56 h-56 rounded-full border border-white/15 bg-white/5 flex items-center justify-center">
-    <motion.div
-      className="absolute inset-4 rounded-full border border-white/10 border-dashed"
-      animate={{ rotate: game.direction === 1 ? 0 : 180 }}
-      transition={{ duration: 0.5, ease: "easeInOut" }}
-    />
+        <div
+          className="row-start-2 col-start-2 flex items-center justify-center gap-4"
+          onClick={() => { setSelectedId(null); setDrawArmed(false); }}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+            disabled={
+              !myTurn ||
+              !revealed ||
+              hasDrawnThisTurn ||
+              game.pendingAction !== null ||
+              viewerIsBot ||
+              isDrawing ||
+              comboActive
+            }
+            className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
+              myTurn &&
+              revealed &&
+              !hasDrawnThisTurn &&
+              game.pendingAction === null &&
+              !viewerIsBot &&
+              !isDrawing &&
+              !comboActive
+                ? "active:scale-95"
+                : "opacity-70"
+            } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
+          >
+            <div ref={drawPileRef}>
+              <UnoCardView
+                card={{ id: "back", color: "wild", value: "wild" }}
+                faceDown
+                flipMode={flipMode}
+                size="md"
+                darkSide={backDarkSide}
+                flipMap={game.flipMap}
+              />
+            </div>
+<span className="text-[10px] text-white/70">
+  {hasDrawnThisTurn
+    ? "Drew"
+    : drawArmed && game.pendingDraw > 0
+      ? `Draw ${game.pendingDraw}`
+      : drawArmed
+        ? "Tap again"
+        : "Draw"} ({game.drawPile.length})
+</span>
+          </button>
 
-    <div className="absolute left-6">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDrawPileTap();
-        }}
-        disabled={
-          !myTurn ||
-          !revealed ||
-          hasDrawnThisTurn ||
-          game.pendingAction !== null ||
-          viewerIsBot ||
-          isDrawing ||
-          comboActive
-        }
-        className={`flex flex-col items-center gap-1 transition rounded-xl p-1 hover:scale-105 ${
-          myTurn &&
-          revealed &&
-          !hasDrawnThisTurn &&
-          game.pendingAction === null &&
-          !viewerIsBot &&
-          !isDrawing &&
-          !comboActive
-            ? "active:scale-95"
-            : "opacity-70"
-        } ${drawArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
-      >
-        <div ref={drawPileRef}>
-          <UnoCardView
-            card={{ id: "back", color: "wild", value: "wild" }}
-            faceDown
-            flipMode={flipMode}
-            size="md"
-            darkSide={backDarkSide}
-            flipMap={game.flipMap}
-          />
+          <div className="flex flex-col items-center gap-1">
+            <motion.div ref={discardRef} key={visibleTop.id}>
+              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide}
+                flipMap={game.flipMap} />
+            </motion.div>
+            <span className="text-[10px] text-white/60">Top</span>
+          </div>
         </div>
-        <span className="text-[10px] text-white/70">
-          {game.pendingDraw > 0
-            ? `Draw +${game.pendingDraw}`
-            : hasDrawnThisTurn
-              ? "Drew"
-              : drawArmed
-                ? "Tap again"
-                : "Draw"}
-        </span>
-      </button>
-    </div>
-
-    <div className="absolute right-6 flex flex-col items-center gap-1">
-      <motion.div ref={discardRef} key={visibleTop.id} whileHover={{ scale: 1.05 }}>
-        <UnoCardView
-          card={visibleTop}
-          disabled
-          size="md"
-          highlightColor={game.activeColor}
-          darkSide={darkSide}
-          flipMap={game.flipMap}
-        />
-      </motion.div>
-      <span className="text-[10px] text-white/60">Top</span>
-    </div>
-
-    <motion.div
-      className="absolute text-white/70 text-2xl"
-      animate={{ rotate: game.direction === 1 ? 0 : 180 }}
-      transition={{ duration: 0.5, ease: "easeInOut" }}
-    >
-      ↻
-    </motion.div>
-  </div>
-</div>
 
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
@@ -881,37 +880,40 @@ const resolvePenaltyDraw = () => {
           </div>
 
           {/* Buttons */}
-          {canEndTurn && !selectedId ? (
-            <button
-              onClick={onPass}
-              className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
-            >
-              End Turn
-            </button>
-          ) : selectedId && selectedPlayable ? (
-            <button
-              onClick={confirmPlay}
-              className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
-            >
-              ✓ Play Card
-            </button>
-          ) : selectedId ? (
-            <button
-              onClick={() => setSelectedId(null)}
-              className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
-            >
-              Cancel
-            </button>
-          ) : null}
-          {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
-  <button
-    onClick={resolvePenaltyDraw}
-    className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
-  >
-    Draw +{game.pendingDraw}
-  </button>
-) : null}
-        </div>
+<div className="flex items-center gap-2">
+  {/* Penalty draw button – only in action zone when the player is victim */}
+  {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
+    <button
+      onClick={resolvePenaltyDraw}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
+    >
+      Draw +{game.pendingDraw}
+    </button>
+  ) : null}
+
+  {canEndTurn && !selectedId ? (
+    <button
+      onClick={onPass}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
+    >
+      End Turn
+    </button>
+  ) : selectedId && selectedPlayable ? (
+    <button
+      onClick={confirmPlay}
+      className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+    >
+      ✓ Play Card
+    </button>
+  ) : selectedId ? (
+    <button
+      onClick={() => setSelectedId(null)}
+      className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
+    >
+      Cancel
+    </button>
+  ) : null}
+</div>
 
         <div
           ref={handZoneRef}
