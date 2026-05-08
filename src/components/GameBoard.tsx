@@ -914,7 +914,7 @@ const onDrawPileTap = () => {
     </button>
   ) : null}
 </div>
-
+</div>
         <div
           ref={handZoneRef}
           className="px-3 scroll-smooth"
