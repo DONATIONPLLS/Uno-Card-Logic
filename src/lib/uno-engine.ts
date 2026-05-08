@@ -446,45 +446,45 @@ export function playCard(
     return s;
   }
 
-  let skipNext = false;
-  switch (card.value) {
-    case "skip":
-      skipNext = true;
-      break;
-    case "reverse":
-      s.direction = (s.direction === 1 ? -1 : 1) as 1 | -1;
-      if (s.hands.length === 2) skipNext = true;
-      break;
-    case "draw2":
-      s.pendingDraw += 2;
-      break;
-    case "wild4":
-      s.pendingDraw += 4;
-      break;
-  }
+let skipNext = false;
+switch (card.value) {
+  case "skip":
+    skipNext = true;
+    break;
+  case "reverse":
+    s.direction = (s.direction === 1 ? -1 : 1) as 1 | -1;
+    if (s.hands.length === 2) skipNext = true;
+    break;
+  case "draw2":
+    s.pendingDraw += 2;
+    break;
+  case "wild4":
+    s.pendingDraw += 4;
+    break;
+}
 
-  if (s.houseRules.sevenZero && card.value === "0") {
-    const dir = s.direction;
-    const n = s.hands.length;
-    const newHands: UnoCard[][] = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const fromIdx = ((i - dir) % n + n) % n;
-      newHands[i] = s.hands[fromIdx];
-    }
-    s.hands = newHands;
-    s.log.unshift(`Everyone passes their hand!`);
+if (s.houseRules.sevenZero && card.value === "0") {
+  const dir = s.direction;
+  const n = s.hands.length;
+  const newHands: UnoCard[][] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const fromIdx = ((i - dir) % n + n) % n;
+    newHands[i] = s.hands[fromIdx];
   }
+  s.hands = newHands;
+  s.log.unshift(`Everyone passes their hand!`);
+}
 
-  if (s.houseRules.sevenZero && card.value === "7") {
-    s.pendingAction = { type: "swap7", from: playerIdx };
-    s.log.unshift(
-      `${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`,
-    );
-    return s;
-  }
+if (s.houseRules.sevenZero && card.value === "7") {
+  s.pendingAction = { type: "swap7", from: playerIdx };
+  s.log.unshift(
+    `${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`,
+  );
+  return s;
+}
 
+// ── Same‑card combo check ──
 const isNumberCard = (v: string) => /^[0-9]$/.test(v);
-
 const canCombo =
   s.houseRules.sameCardCombo &&
   isNumberCard(card.value) &&
@@ -496,22 +496,33 @@ const canCombo =
       isNumberCard(c.value)
   );
 
-  if (!canCombo) {
-    // If this card would skip the next player, queue the skip for after combo ends.
-    if (skipNext) {
-      s.queuedSkipNext = true;
-    }
-    s = endTurn(s, playerIdx);
-  } else {
-    // Combo allowed → stay on the same player, do NOT end turn.
-    // The skip effect (if any) is queued for the next player after the combo finishes.
-    if (skipNext) {
-      s.queuedSkipNext = true;
-      skipNext = false;
+if (!canCombo) {
+  if (skipNext) {
+    s.queuedSkipNext = true;
+  }
+  s = endTurn(s, playerIdx);
+
+  // ── Auto‑draw for victim if they can't stack ──
+  const victimIdx = s.currentPlayer;
+  if (s.pendingDraw > 0) {
+    const canStack =
+      s.houseRules.stackDraws &&
+      s.hands[victimIdx].some((c) =>
+        isValidMove(c, s.discardPile[s.discardPile.length - 1], s.activeColor, s.pendingDraw, s.houseRules)
+      );
+
+    if (!canStack) {
+      s = drawPenaltyThenEnd(s, victimIdx);
     }
   }
+} else {
+  // Combo allowed → stay on the same player
+  if (skipNext) {
+    s.queuedSkipNext = true;
+  }
+}
 
-  return s;
+return s;
 }
 
 
@@ -723,3 +734,4 @@ function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
 }
+
