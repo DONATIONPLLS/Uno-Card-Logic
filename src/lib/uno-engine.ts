@@ -214,7 +214,6 @@ export interface GameState {
   skipNext: boolean;
   flipMap: Record<string, UnoCard>; //new
   queuedSkipNext: boolean;   // <-- add this
-  pendingDrawFrom: number | null;
 }
 
 
@@ -278,16 +277,18 @@ export function isValidMove(
   if (rules.allWild) return true;
 
   // ── Pending draw: only stacking moves are legal ──
-if (pendingDraw > 0) {
+ if (pendingDraw > 0) {
   if (!rules.stackDraws) return false;
 
+  // +2 on +2 or +4 on +4 (same value)
   if (topCard.value === "draw2" && card.value === "draw2") return true;
   if (topCard.value === "wild4" && card.value === "wild4") return true;
+
+  // +4 on +2 (always allowed when stacking)
   if (topCard.value === "draw2" && card.value === "wild4") return true;
 
-  if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) {
-    return true;
-  }
+  // +2 on +4 – only if the +2's colour matches the active colour chosen for the wild4
+  if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) return true;
 
   return false;
 }
@@ -350,9 +351,8 @@ export function dealNewGame(opts: NewGameOptions): GameState {
         ? [...opts.previousScores]
         : new Array(players.length).fill(0),
     skipNext: false,
-    flipMap,
-    queuedSkipNext: false,
-    pendingDrawFrom: null,
+flipMap,
+queuedSkipNext: false,
   };
 }
 
@@ -456,13 +456,11 @@ export function playCard(
       if (s.hands.length === 2) skipNext = true;
       break;
     case "draw2":
-  s.pendingDraw += 2;
-  s.pendingDrawFrom = playerIdx;
-  break;
-case "wild4":
-  s.pendingDraw += 4;
-  s.pendingDrawFrom = playerIdx;
-  break;
+      s.pendingDraw += 2;
+      break;
+    case "wild4":
+      s.pendingDraw += 4;
+      break;
   }
 
   if (s.houseRules.sevenZero && card.value === "0") {
@@ -607,15 +605,18 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
  * This mirrors the official rule: the victim draws and is skipped.
  */
 export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
+  // Draw the required cards (same logic as drawOne but we force endTurn)
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
 
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
   s.pendingDraw = 0;
-  s.pendingDrawFrom = null;
 
+  // Log the draw
   s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
+
+  // Now skip the player
   s.currentPlayer = nextPlayer(s);
   return s;
 }
@@ -720,6 +721,5 @@ function cloneState(s: GameState): GameState {
     skipNext: s.skipNext,
     queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
-    pendingDrawFrom: null,
   };
 }
