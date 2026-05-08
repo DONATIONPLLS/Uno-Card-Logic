@@ -243,38 +243,13 @@ useEffect(() => {
   }
 }, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
 
-// Auto‑draw when a human player is the victim and cannot stack (or stacking is off)
-useEffect(() => {
-  if (!myTurn || viewerIsBot || !revealed || game.winner) return;
-  if (game.pendingDraw <= 0) return;
-  if (isDrawing || game.pendingAction !== null || comboActive) return;
-
-  const canStack =
-    game.houseRules.stackDraws &&
-    game.hands[handViewIdx].some((c) =>
-      isValidMove(c, game.discardPile[game.discardPile.length - 1], game.activeColor, game.pendingDraw, game.houseRules)
-    );
-
-  if (!canStack) {
-    const timer = setTimeout(() => {
-      setGame((prev) => drawPenaltyThenEnd(prev, handViewIdx));
-    }, 400);
-    return () => clearTimeout(timer);
-  }
-}, [myTurn, viewerIsBot, revealed, game.pendingDraw, game.winner, isDrawing, game.pendingAction, comboActive, game.houseRules.stackDraws, game.discardPile, game.activeColor, handViewIdx, setGame]);
-
 // Reset hasDrawnThisTurn when the turn comes back to the viewer (new turn)
 useEffect(() => {
   if (currentIdx === handViewIdx && game.winner === null && game.pendingAction === null && !isDrawing) {
-    // Only reset if we weren't already drawing (prevents loop)
-    if (prevTurnRef.current !== currentIdx || (prevTurnRef.current === currentIdx && !hasDrawnThisTurn)) {
-      // This is a fresh turn for the viewer
-      setHasDrawnThisTurn(false);
-      setDrawArmed(false);
-    }
-    prevTurnRef.current = currentIdx;
+    setHasDrawnThisTurn(false);
+    setDrawArmed(false);
   }
-}, [currentIdx, handViewIdx, game.winner, game.pendingAction, isDrawing, hasDrawnThisTurn]);
+}, [currentIdx, handViewIdx, game.winner, game.pendingAction, isDrawing]);
 
   // ── Card flight animations (play only) ──
   useEffect(() => {
@@ -584,7 +559,7 @@ const onDrawPileTap = () => {
   if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
   if (isDrawing) return;
 
-  // Penalty draw: two‑tap confirmation + auto‑draw handled in effect
+  // Penalty draw: two‑tap confirmation
   if (game.pendingDraw > 0) {
     if (!drawArmed) {
       sfx.click();
@@ -879,7 +854,6 @@ const onDrawPileTap = () => {
             <span className="text-[10px] text-white/50 ml-1">{myHand.length} cards</span>
           </div>
 
-          {/* Buttons */}
 <div className="flex items-center gap-2">
   {/* Penalty draw button – only in action zone when the player is victim */}
   {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
@@ -898,6 +872,21 @@ const onDrawPileTap = () => {
     >
       End Turn
     </button>
+  ) : selectedId && comboActive ? (          // combo active → show both Play and End
+    <>
+      <button
+        onClick={confirmPlay}
+        className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+      >
+        ✓ Play Card
+      </button>
+      <button
+        onClick={onPass}
+        className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
+      >
+        End Turn
+      </button>
+    </>
   ) : selectedId && selectedPlayable ? (
     <button
       onClick={confirmPlay}
@@ -914,7 +903,8 @@ const onDrawPileTap = () => {
     </button>
   ) : null}
 </div>
-</div>
+        </div>
+
         <div
           ref={handZoneRef}
           className="px-3 scroll-smooth"
@@ -1227,3 +1217,4 @@ function Modal({
     </div>
   );
 }
+
