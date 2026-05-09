@@ -212,8 +212,9 @@ export interface GameState {
   winner: number | null;
   scores: number[];
   skipNext: boolean;
-  flipMap: Record<string, UnoCard>; //new
-  queuedSkipNext: boolean;   // <-- add this
+  flipMap: Record<string, UnoCard>;
+  queuedSkipNext: boolean;
+  turnSerial: number;
 }
 
 
@@ -273,33 +274,46 @@ export function isValidMove(
   pendingDraw: number,
   rules: HouseRules,
 ): boolean {
-  // ── All-Wild mode: every card plays on everything ──
   if (rules.allWild) return true;
 
-  // ── Pending draw: only stacking moves are legal ──
- if (pendingDraw > 0) {
-  if (!rules.stackDraws) return false;
+  if (pendingDraw > 0) {
+    if (!rules.stackDraws) return false;
 
-  // +2 on +2 or +4 on +4 (same value)
-  if (topCard.value === "draw2" && card.value === "draw2") return true;
-  if (topCard.value === "wild4" && card.value === "wild4") return true;
+    if (topCard.value === "draw2") {
+      if (card.value === "draw2") return true;
+      if (card.value === "wild4") return true;
+      return false;
+    }
 
-  // +4 on +2 (always allowed when stacking)
-  if (topCard.value === "draw2" && card.value === "wild4") return true;
+    if (topCard.value === "wild4") {
+      if (card.value === "wild4") return true;
+      if (card.value === "draw2" && card.color === activeColor) return true; // +2 on +4 stacking
+      return false;
+    }
 
-  // +2 on +4 – only if the +2's colour matches the active colour chosen for the wild4
-  if (topCard.value === "wild4" && card.value === "draw2" && card.color === activeColor) return true;
+    return false;
+  }
+
+  if (card.color === "wild") return true;
+  if (card.color === activeColor) return true;
+  if (card.value === topCard.value) return true;
+  if (
+    card.value === "draw1" ||
+    card.value === "wild_draw2" ||
+    card.value === "draw_to_color" ||
+    card.value === "skip_all" ||
+    card.value === "draw5"
+  ) return true;
 
   return false;
 }
 
- // Normal turn
-if (card.color === "wild") return true;
-if (card.color === activeColor) return true;
-if (card.value === topCard.value) return true;
-// allow draw1, wild_draw2, draw_to_color, skip_all
-if (card.value === "draw1" || card.value === "wild_draw2" || card.value === "draw_to_color" || card.value === "skip_all" || card.value === "draw5") return true;
-    return false;
+export function canStack(state: GameState, playerIdx: number): boolean {
+  if (state.pendingDraw <= 0) return false;
+  const top = state.discardPile[state.discardPile.length - 1];
+  return state.hands[playerIdx].some((c) =>
+    isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules),
+  );
 }
 
 export interface NewGameOptions {
@@ -316,9 +330,8 @@ export function dealNewGame(opts: NewGameOptions): GameState {
   const { lightDeck, flipMap } = buildDeck(opts.mode ?? "standard", houseRules.allWild);
   let deck = shuffle(lightDeck);
   const hands: UnoCard[][] = [];
-  for (let p = 0; p < players.length; p++) {
-    hands.push(deck.splice(0, 7));
-  }
+  for (let p = 0; p < players.length; p++) hands.push(deck.splice(0, 7));
+
   let first: UnoCard;
   if (houseRules.allWild) {
     first = deck.splice(0, 1)[0];
@@ -329,8 +342,10 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     if (firstIdx === -1) firstIdx = 0;
     first = deck.splice(firstIdx, 1)[0];
   }
+
   const startColor: UnoColor =
     first.color === "wild" ? COLORS[Math.floor(Math.random() * 4)] : (first.color as UnoColor);
+
   return {
     drawPile: deck,
     discardPile: [first],
@@ -351,8 +366,9 @@ export function dealNewGame(opts: NewGameOptions): GameState {
         ? [...opts.previousScores]
         : new Array(players.length).fill(0),
     skipNext: false,
-flipMap,
-queuedSkipNext: false,
+    flipMap,
+    queuedSkipNext: false,
+    turnSerial: 0,
   };
 }
 
@@ -412,9 +428,11 @@ export function playCard(
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null) return s;
   if (playerIdx !== s.currentPlayer) return s;
+
   const hand = s.hands[playerIdx];
   const idx = hand.findIndex((c) => c.id === cardId);
   if (idx === -1) return s;
+
   const card = hand[idx];
   const top = s.discardPile[s.discardPile.length - 1];
   if (!isValidMove(card, top, s.activeColor, s.pendingDraw, s.houseRules)) return s;
@@ -432,9 +450,9 @@ export function playCard(
 
   if (card.value === "flip") {
     s.gameSide = s.gameSide === "light" ? "dark" : "light";
-    s.discardPile = s.discardPile.map(c => flipCard(c, s.flipMap));
-    s.drawPile = s.drawPile.map(c => flipCard(c, s.flipMap));
-    s.hands = s.hands.map(hand => hand.map(c => flipCard(c, s.flipMap)));
+    s.discardPile = s.discardPile.map((c) => flipCard(c, s.flipMap));
+    s.drawPile = s.drawPile.map((c) => flipCard(c, s.flipMap));
+    s.hands = s.hands.map((h) => h.map((c) => flipCard(c, s.flipMap)));
     s.log.unshift(`All cards have flipped to the ${s.gameSide} side!`);
   }
 
@@ -446,83 +464,69 @@ export function playCard(
     return s;
   }
 
-let skipNext = false;
-switch (card.value) {
-  case "skip":
-    skipNext = true;
-    break;
-  case "reverse":
-    s.direction = (s.direction === 1 ? -1 : 1) as 1 | -1;
-    if (s.hands.length === 2) skipNext = true;
-    break;
-  case "draw2":
-    s.pendingDraw += 2;
-    break;
-  case "wild4":
-    s.pendingDraw += 4;
-    break;
-}
-
-if (s.houseRules.sevenZero && card.value === "0") {
-  const dir = s.direction;
-  const n = s.hands.length;
-  const newHands: UnoCard[][] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const fromIdx = ((i - dir) % n + n) % n;
-    newHands[i] = s.hands[fromIdx];
+  let skipNext = false;
+  switch (card.value) {
+    case "skip":
+      skipNext = true;
+      break;
+    case "reverse":
+      s.direction = (s.direction === 1 ? -1 : 1) as 1 | -1;
+      if (s.hands.length === 2) skipNext = true;
+      break;
+    case "draw2":
+      s.pendingDraw += 2;
+      break;
+    case "wild4":
+      s.pendingDraw += 4;
+      break;
   }
-  s.hands = newHands;
-  s.log.unshift(`Everyone passes their hand!`);
-}
 
-if (s.houseRules.sevenZero && card.value === "7") {
-  s.pendingAction = { type: "swap7", from: playerIdx };
-  s.log.unshift(
-    `${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`,
-  );
-  return s;
-}
-
-// ── Same‑card combo check ──
-const isNumberCard = (v: string) => /^[0-9]$/.test(v);
-const canCombo =
-  s.houseRules.sameCardCombo &&
-  isNumberCard(card.value) &&
-  hand.some(
-    (c) =>
-      c.id !== card.id &&
-      c.color === card.color &&
-      c.value === card.value &&
-      isNumberCard(c.value)
-  );
-
-if (!canCombo) {
-  if (skipNext) {
-    s.queuedSkipNext = true;
+  if (s.houseRules.sevenZero && card.value === "0") {
+    const dir = s.direction;
+    const n = s.hands.length;
+    const newHands: UnoCard[][] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const fromIdx = ((i - dir) % n + n) % n;
+      newHands[i] = s.hands[fromIdx];
+    }
+    s.hands = newHands;
+    s.log.unshift(`Everyone passes their hand!`);
   }
-  s = endTurn(s, playerIdx);
 
-  // ── Auto‑draw for victim if they can't stack ──
-  const victimIdx = s.currentPlayer;
-  if (s.pendingDraw > 0) {
-    const canStack =
-      s.houseRules.stackDraws &&
-      s.hands[victimIdx].some((c) =>
-        isValidMove(c, s.discardPile[s.discardPile.length - 1], s.activeColor, s.pendingDraw, s.houseRules)
-      );
+  if (s.houseRules.sevenZero && card.value === "7") {
+    s.pendingAction = { type: "swap7", from: playerIdx };
+    s.log.unshift(`${nameOf(s.players[playerIdx])} must choose someone to swap hands with.`);
+    return s;
+  }
 
-    if (!canStack) {
-      s = drawPenaltyThenEnd(s, victimIdx);
+  const isNumberCard = (v: string) => /^[0-9]$/.test(v);
+
+  const canCombo =
+    s.houseRules.sameCardCombo &&
+    isNumberCard(card.value) &&
+    hand.some(
+      (c) =>
+        c.id !== card.id &&
+        c.color === card.color &&
+        c.value === card.value &&
+        isNumberCard(c.value),
+    );
+
+  if (!canCombo) {
+    if (skipNext) s.queuedSkipNext = true;
+    s = endTurn(s, playerIdx);
+
+    if (s.pendingDraw > 0 && !canStack(s, s.currentPlayer)) {
+      s = drawPenaltyThenEnd(s, s.currentPlayer);
+    }
+  } else {
+    if (skipNext) {
+      s.queuedSkipNext = true;
+      skipNext = false;
     }
   }
-} else {
-  // Combo allowed → stay on the same player
-  if (skipNext) {
-    s.queuedSkipNext = true;
-  }
-}
 
-return s;
+  return s;
 }
 
 
@@ -533,11 +537,10 @@ export function resolveSwap(state: GameState, targetIdx: number): GameState {
   const tmp = s.hands[from];
   s.hands[from] = s.hands[targetIdx];
   s.hands[targetIdx] = tmp;
-  s.log.unshift(
-    `${nameOf(s.players[from])} swapped hands with ${nameOf(s.players[targetIdx])}.`,
-  );
+  s.log.unshift(`${nameOf(s.players[from])} swapped hands with ${nameOf(s.players[targetIdx])}.`);
   s.pendingAction = null;
   s.currentPlayer = nextPlayer(s);
+  s.turnSerial += 1;
   return s;
 }
 
@@ -596,7 +599,6 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
   if (playerIdx !== state.currentPlayer) return state;
   const s = cloneState(state);
 
-  // Apply a queued skip that was produced by an action card during a combo.
   if (s.queuedSkipNext) {
     s.skipNext = true;
     s.queuedSkipNext = false;
@@ -608,6 +610,8 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
   } else {
     s.currentPlayer = nextPlayer(s);
   }
+
+  s.turnSerial += 1;
   return s;
 }
 
@@ -616,19 +620,15 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
  * This mirrors the official rule: the victim draws and is skipped.
  */
 export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
-  // Draw the required cards (same logic as drawOne but we force endTurn)
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
 
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
   s.pendingDraw = 0;
-
-  // Log the draw
   s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
-
-  // Now skip the player
   s.currentPlayer = nextPlayer(s);
+  s.turnSerial += 1;
   return s;
 }
 
@@ -730,8 +730,9 @@ function cloneState(s: GameState): GameState {
     winner: s.winner,
     scores: [...s.scores],
     skipNext: s.skipNext,
-    queuedSkipNext: s.queuedSkipNext,   // only once
     flipMap: { ...s.flipMap },
+    queuedSkipNext: s.queuedSkipNext,
+    turnSerial: s.turnSerial,
   };
 }
 
