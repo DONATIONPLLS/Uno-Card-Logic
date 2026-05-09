@@ -14,7 +14,7 @@ import {
   type GameState,
   type UnoCard,
   type UnoColor,
-  type WildColor, // <-- add this
+  type WildColor,
   drawSingle,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
@@ -106,6 +106,7 @@ export function GameBoard({
   const [revealed, setRevealed] = useState(viewerIdx !== undefined);
   const [hasDrawnThisTurn, setHasDrawnThisTurn] = useState(false);
   const [drawArmed, setDrawArmed] = useState(false);
+  const [isPenaltyArmed, setIsPenaltyArmed] = useState(false);
   const prevTurnRef = useRef<number | null>(null);
   const lastHumanRef = useRef<number | null>(null);
   const [overlayKind, setOverlayKind] = useState<"pass" | "yourturn" | null>(null);
@@ -129,27 +130,8 @@ export function GameBoard({
   gameRef.current = game;
   const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isPenaltyArmed, setIsPenaltyArmed] = useState(false);
-const prevTurnSerialRef = useRef<number>(game.turnSerial);
 
-const drawPenalty = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-  if (isDrawing) return;
-
-  setSelectedId(null);
-  setPickColorFor(null);
-  setDrawArmed(false);
-  setIsPenaltyArmed(false);
-  setHasDrawnThisTurn(true);
-  setComboActive(false);
-
-  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-  startDrawAnimation(handViewIdx, cardsToDraw, () => {
-    act.endTurn();
-  });
-};
-
-  // Real startDrawAnimation (not a placeholder)
+  // Real startDrawAnimation
   const startDrawAnimation = useCallback(
     (playerIdx: number, numCards: number, onComplete?: () => void) => {
       if (isDrawing) return;
@@ -255,25 +237,33 @@ const drawPenalty = () => {
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-   // ── Reset combo when the turn changes or a draw happens ──
-useEffect(() => {
-  if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
-    setComboActive(false);
-  }
-}, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
+  // ── Reset combo when the turn changes ──
+  useEffect(() => {
+    if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
+      setComboActive(false);
+    }
+  }, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
 
-useEffect(() => {
-  if (prevTurnSerialRef.current === game.turnSerial) return;
-  prevTurnSerialRef.current = game.turnSerial;
+  // ── Reset turn‑local state when the turn truly changes ──
+  useEffect(() => {
+    if (currentIdx !== handViewIdx) {
+      setSelectedId(null);
+      setPickColorFor(null);
+      setHasDrawnThisTurn(false);
+      setDrawArmed(false);
+      setIsPenaltyArmed(false);
+      setComboActive(false);
+    }
+  }, [currentIdx, handViewIdx]);
 
-  setSelectedId(null);
-  setPickColorFor(null);
-  setSwapPickerFor(null);
-  setHasDrawnThisTurn(false);
-  setDrawArmed(false);
-  setIsPenaltyArmed(false);
-  setComboActive(false);
-}, [game.turnSerial]);
+  // ── Reset hasDrawnThisTurn when the turn comes back to the viewer (skip/reverse) ──
+  useEffect(() => {
+    if (currentIdx === handViewIdx && game.winner === null && game.pendingAction === null && !isDrawing) {
+      setHasDrawnThisTurn(false);
+      setDrawArmed(false);
+      setIsPenaltyArmed(false);
+    }
+  }, [currentIdx, handViewIdx, game.winner, game.pendingAction, isDrawing]);
 
   // ── Card flight animations (play only) ──
   useEffect(() => {
@@ -337,11 +327,11 @@ useEffect(() => {
     pendingPlayFlight.current = true;
     const ids = newFlights.map((f) => f.id);
     const t = setTimeout(() => {
-  setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
-  if (newTopSuppress) setSuppressedTopId(null);
-  pendingPlayFlight.current = false;
-  act.endTurn();
-}, 520);
+      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
+      if (newTopSuppress) setSuppressedTopId(null);
+      pendingPlayFlight.current = false;
+      act.endTurn();
+    }, 520);
     return () => clearTimeout(t);
   }, [game, handViewIdx]);
 
@@ -376,8 +366,8 @@ useEffect(() => {
       case "flip": msg = "FLIP!"; heavy = true; break;
     }
     if (msg) {
-     const topColor: WildColor = top.color;
-const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
+      const topColor: WildColor = top.color;
+      const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor as UnoColor;
       setAnnouncement({ text: msg, color: c });
       if (heavy) { sfx.impact(); haptics.heavy(); }
       const t = setTimeout(() => setAnnouncement(null), 1500);
@@ -401,6 +391,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
+    setIsPenaltyArmed(false);
     setComboActive(false);
 
     if (game.winner !== null) { setRevealed(true); setOverlayKind(null); return; }
@@ -473,6 +464,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
+    setIsPenaltyArmed(false);
     setComboActive(false);
   }, [currentIdx, isPassAndPlay]);
 
@@ -486,148 +478,137 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     };
   };
 
-const onCardTap = (cardId: string) => {
-  if (!myTurn || !revealed || viewerIsBot) return;
-  if (game.pendingAction !== null) return;
-  const card = game.hands[handViewIdx].find((c) => c.id === cardId);
-  if (!card) return;
+  const onCardTap = (cardId: string) => {
+    if (!myTurn || !revealed || viewerIsBot) return;
+    if (game.pendingAction !== null) return;
+    const card = game.hands[handViewIdx].find((c) => c.id === cardId);
+    if (!card) return;
 
-  let playable: boolean;
-  if (comboActive) {
-    playable = card.color === top.color && card.value === top.value;
-    if (!game.houseRules.sameCardCombo) playable = false;
-  } else {
-    playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
-  }
+    let playable: boolean;
+    if (comboActive) {
+      playable = card.color === top.color && card.value === top.value;
+      if (!game.houseRules.sameCardCombo) playable = false;
+    } else {
+      playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
+    }
 
-  setDrawArmed(false);
-  setIsPenaltyArmed(false);
+    setDrawArmed(false);
+    setIsPenaltyArmed(false);
 
-  if (!playable) {
-    sfx.click();
-    haptics.light();
-    setSelectedId(cardId);
-    return;
-  }
+    if (!playable) {
+      sfx.click(); haptics.light(); setSelectedId(cardId); return;
+    }
+    if (selectedId !== cardId) {
+      sfx.click(); haptics.light(); setSelectedId(cardId); return;
+    }
+    confirmPlay();
+  };
 
-  if (selectedId !== cardId) {
-    sfx.click();
-    haptics.light();
-    setSelectedId(cardId);
-    return;
-  }
+  const confirmPlay = () => {
+    if (!selectedId) return;
+    const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
+    if (!card) return;
 
-  confirmPlay();
-};
+    const actualPlayable = comboActive
+      ? card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo
+      : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
 
-const confirmPlay = () => {
-  if (!selectedId) return;
-  const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
-  if (!card) return;
+    if (!actualPlayable) return;
 
-  const actualPlayable = comboActive
-    ? card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo
-    : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
+    const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
-  if (!actualPlayable) return;
-
-  const isNumberCard = (v: string) => /^[0-9]$/.test(v);
-
-  if (card.color === "wild") {
-    setPickColorFor(selectedId);
-    return;
-  }
-
-  const canContinueCombo =
-    game.houseRules.sameCardCombo &&
-    isNumberCard(card.value) &&
-    game.hands[handViewIdx].some(
-      (c) => c.id !== card.id && isNumberCard(c.value) && c.color === card.color && c.value === card.value,
-    );
-
-  captureOriginFor(selectedId);
-  sfx.swish();
-  haptics.medium();
-  act.play(selectedId);
-  setSelectedId(null);
-  setIsPenaltyArmed(false);
-  setComboActive(canContinueCombo);
-};
-
-const handlePickColor = (color: UnoColor) => {
-  if (!pickColorFor) return;
-  captureOriginFor(pickColorFor);
-  sfx.swish();
-  haptics.medium();
-  act.play(pickColorFor, color);
-  setPickColorFor(null);
-  setSelectedId(null);
-  setIsPenaltyArmed(false);
-  setComboActive(false);
-};
-
-const onPass = () => {
-  if (!myTurn || !revealed) return;
-  haptics.light();
-  setIsPenaltyArmed(false);
-  act.endTurn();
-};
-
-const resolvePenaltyDraw = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-  if (isDrawing || selectedId) return;
-
-  setDrawArmed(false);
-  setHasDrawnThisTurn(true);
-  setComboActive(false);
-
-  const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
-  startDrawAnimation(handViewIdx, cardsToDraw, () => {
-    act.endTurn();
-  });
-};
-
-const onDrawPileTap = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
-  if (isDrawing) return;
-
-  if (game.pendingDraw > 0) {
-    if (!isPenaltyArmed) {
-      sfx.click();
-      haptics.light();
-      setIsPenaltyArmed(true);
-      setDrawArmed(false);
+    if (card.color === "wild") {
+      setPickColorFor(selectedId);
       return;
     }
 
-    drawPenalty();
-    return;
-  }
+    const canContinueCombo =
+      game.houseRules.sameCardCombo &&
+      isNumberCard(card.value) &&
+      game.hands[handViewIdx].some(
+        (c) =>
+          c.id !== card.id &&
+          isNumberCard(c.value) &&
+          c.color === card.color &&
+          c.value === card.value,
+      );
 
-  if (comboActive) return;
-
-  if (selectedId) {
+    captureOriginFor(selectedId);
+    sfx.swish(); haptics.medium();
+    act.play(selectedId);
     setSelectedId(null);
     setIsPenaltyArmed(false);
-    return;
-  }
+    setComboActive(canContinueCombo);
+  };
 
-  if (hasDrawnThisTurn) return;
-
-  if (!drawArmed) {
-    sfx.click();
-    haptics.light();
-    setDrawArmed(true);
+  const handlePickColor = (color: UnoColor) => {
+    if (!pickColorFor) return;
+    captureOriginFor(pickColorFor);
+    sfx.swish(); haptics.medium();
+    act.play(pickColorFor, color);
+    setPickColorFor(null);
+    setSelectedId(null);
     setIsPenaltyArmed(false);
-    return;
-  }
+    setComboActive(false);
+  };
 
-  setDrawArmed(false);
-  setHasDrawnThisTurn(true);
-  setComboActive(false);
-  setIsPenaltyArmed(false);
-  startDrawAnimation(handViewIdx, 1);
-};
+  const onPass = () => {
+    if (!myTurn || !revealed) return;
+    haptics.light();
+    setIsPenaltyArmed(false);
+    act.endTurn();
+  };
+
+  const resolvePenaltyDraw = () => {
+    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+    if (isDrawing || selectedId) return;
+
+    setDrawArmed(false);
+    setIsPenaltyArmed(false);
+    setHasDrawnThisTurn(true);
+    setComboActive(false);
+
+    const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
+    startDrawAnimation(handViewIdx, cardsToDraw, () => {
+      act.endTurn();
+    });
+  };
+
+  const onDrawPileTap = () => {
+    if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+    if (isDrawing) return;
+
+    if (game.pendingDraw > 0) {
+      if (!isPenaltyArmed) {
+        sfx.click();
+        haptics.light();
+        setIsPenaltyArmed(true);
+        setDrawArmed(false);
+        return;
+      }
+      resolvePenaltyDraw();
+      return;
+    }
+
+    if (comboActive) return;
+
+    if (selectedId) { setSelectedId(null); setIsPenaltyArmed(false); return; }
+    if (hasDrawnThisTurn) return;
+
+    if (!drawArmed) {
+      sfx.click();
+      haptics.light();
+      setDrawArmed(true);
+      setIsPenaltyArmed(false);
+      return;
+    }
+
+    setDrawArmed(false);
+    setHasDrawnThisTurn(true);
+    setComboActive(false);
+    setIsPenaltyArmed(false);
+    startDrawAnimation(handViewIdx, 1);
+  };
 
   const onPickSwap = (targetIdx: number) => {
     haptics.medium();
@@ -651,12 +632,12 @@ const onDrawPileTap = () => {
   const myHand = game.hands[handViewIdx] ?? [];
 
   const canEndTurn =
-  myTurn &&
-  !isDrawing &&
-  game.pendingAction === null &&
-  !pickColorFor &&
-  !swapPickerFor &&
-  (hasDrawnThisTurn || comboActive);
+    myTurn &&
+    !isDrawing &&
+    game.pendingAction === null &&
+    !pickColorFor &&
+    !swapPickerFor &&
+    (hasDrawnThisTurn || comboActive);
 
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
@@ -727,14 +708,6 @@ const onDrawPileTap = () => {
               +{game.pendingDraw}
             </span>
           ) : null}
-          {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
-  <button
-    onClick={resolvePenaltyDraw}
-    className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
-  >
-    Draw +{game.pendingDraw}
-  </button>
-) : null}
           {flipMode && game.gameSide === "dark" ? (
             <span className="px-2 py-0.5 rounded bg-purple-500/40 text-purple-100 text-[10px] font-bold shrink-0">
               DARK
@@ -800,78 +773,72 @@ const onDrawPileTap = () => {
           ) : null}
         </div>
 
-<div
-  className="row-start-2 col-start-2 flex items-center justify-center gap-4"
-  onClick={() => {
-    setSelectedId(null);
-    setDrawArmed(false);
-    setIsPenaltyArmed(false);
-  }}
->
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      onDrawPileTap();
-    }}
-    disabled={
-      !myTurn ||
-      !revealed ||
-      hasDrawnThisTurn ||
-      game.pendingAction !== null ||
-      viewerIsBot ||
-      isDrawing ||
-      comboActive
-    }
-    className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
-      myTurn &&
-      revealed &&
-      !hasDrawnThisTurn &&
-      game.pendingAction === null &&
-      !viewerIsBot &&
-      !isDrawing &&
-      !comboActive
-        ? "active:scale-95"
-        : "opacity-70"
-    } ${drawArmed || isPenaltyArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
-  >
-    <div ref={drawPileRef}>
-      <UnoCardView
-        card={{ id: "back", color: "wild", value: "wild" }}
-        faceDown
-        flipMode={flipMode}
-        size="md"
-        darkSide={backDarkSide}
-        flipMap={game.flipMap}
-      />
-    </div>
-    <span className="text-[10px] text-white/70">
-      {game.pendingDraw > 0
-        ? isPenaltyArmed
-          ? "Draw N"
-          : `Draw +${game.pendingDraw}`
-        : hasDrawnThisTurn
-          ? "Drew"
-          : drawArmed
-            ? "Tap again"
-            : "Draw"}{" "}
-      ({game.drawPile.length})
-    </span>
-  </button>
+        <div
+          className="row-start-2 col-start-2 flex items-center justify-center gap-4"
+          onClick={() => { setSelectedId(null); setDrawArmed(false); setIsPenaltyArmed(false); }}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+            disabled={
+              !myTurn ||
+              !revealed ||
+              hasDrawnThisTurn ||
+              game.pendingAction !== null ||
+              viewerIsBot ||
+              isDrawing ||
+              comboActive
+            }
+            className={`flex flex-col items-center gap-1 transition rounded-xl p-1 ${
+              myTurn &&
+              revealed &&
+              !hasDrawnThisTurn &&
+              game.pendingAction === null &&
+              !viewerIsBot &&
+              !isDrawing &&
+              !comboActive
+                ? "active:scale-95"
+                : "opacity-70"
+            } ${drawArmed || isPenaltyArmed ? "ring-4 ring-white shadow-2xl -translate-y-2" : ""}`}
+          >
+            <div ref={drawPileRef}>
+              <UnoCardView
+                card={{ id: "back", color: "wild", value: "wild" }}
+                faceDown
+                flipMode={flipMode}
+                size="md"
+                darkSide={backDarkSide}
+                flipMap={game.flipMap}
+              />
+            </div>
+            <span className="text-[10px] text-white/70">
+              {game.pendingDraw > 0
+                ? isPenaltyArmed
+                  ? `Draw ${game.pendingDraw}`
+                  : `Draw +${game.pendingDraw}`
+                : hasDrawnThisTurn
+                  ? "Drew"
+                  : drawArmed
+                    ? "Tap again"
+                    : "Draw"}{" "}
+              ({game.drawPile.length})
+            </span>
+          </button>
 
-  <div className="flex flex-col items-center gap-1">
-    <motion.div ref={discardRef} key={visibleTop.id}>
-      <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide} flipMap={game.flipMap} />
-    </motion.div>
-    <span className="text-[10px] text-white/60">Top</span>
-  </div>
-</div>
+          <div className="flex flex-col items-center gap-1">
+            <motion.div ref={discardRef} key={visibleTop.id}>
+              <UnoCardView card={visibleTop} disabled size="md" highlightColor={game.activeColor} darkSide={darkSide}
+                flipMap={game.flipMap} />
+            </motion.div>
+            <span className="text-[10px] text-white/60">Top</span>
+          </div>
+        </div>
 
         {announcement ? (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div
               className="font-black tracking-wider animate-[impactPop_1.5s_cubic-bezier(.22,1.6,.36,1)_forwards] select-none"
               style={{
-                color: announcement.color === "white" ? "#ffffff" : impactHex[announcement.color],
+                color: announcement.color === "white" ? "#ffffff" : impactHex[announcement.color as UnoColor] ?? "#ffffff",
                 WebkitTextStroke: "2px #1a1a1a",
                 fontSize: "clamp(3rem, 11vw, 6rem)",
                 letterSpacing: "0.04em",
@@ -912,57 +879,50 @@ const onDrawPileTap = () => {
           </div>
 
           {/* Buttons */}
-    <div className="flex items-center gap-2 flex-wrap justify-end">
-      {myTurn && revealed && !viewerIsBot && !isDrawing && game.pendingDraw > 0 ? (
-        <button
-          onClick={drawPenalty}
-          className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
-        >
-          {isPenaltyArmed ? "Draw N" : `Draw +${game.pendingDraw}`}
-        </button>
-      ) : null}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {myTurn && revealed && !viewerIsBot && !isDrawing && game.pendingDraw > 0 ? (
+              <button
+                onClick={resolvePenaltyDraw}
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
+              >
+                {isPenaltyArmed ? "Draw N" : `Draw +${game.pendingDraw}`}
+              </button>
+            ) : null}
 
-      {canEndTurn && !selectedId ? (
-        <button
-          onClick={onPass}
-          className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
-        >
-          End Turn
-        </button>
-      ) : selectedId && selectedPlayable ? (
-        <div className="flex items-center gap-2">
-          {comboActive ? (
-            <button
-              onClick={() => {
-                setSelectedId(null);
-                setIsPenaltyArmed(false);
-              }}
-              className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
-            >
-              Cancel
-            </button>
-          ) : null}
-          <button
-            onClick={confirmPlay}
-            className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
-          >
-            ✓ Play Card
-          </button>
+            {canEndTurn && !selectedId ? (
+              <button
+                onClick={onPass}
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
+              >
+                End Turn
+              </button>
+            ) : selectedId && selectedPlayable ? (
+              <div className="flex items-center gap-2">
+                {comboActive ? (
+                  <button
+                    onClick={() => { setSelectedId(null); setIsPenaltyArmed(false); }}
+                    className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+                <button
+                  onClick={confirmPlay}
+                  className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(140_70%_42%)] text-white shadow-lg active:scale-95 whitespace-nowrap"
+                >
+                  ✓ Play Card
+                </button>
+              </div>
+            ) : selectedId ? (
+              <button
+                onClick={() => { setSelectedId(null); setIsPenaltyArmed(false); }}
+                className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
         </div>
-      ) : selectedId ? (
-        <button
-          onClick={() => {
-            setSelectedId(null);
-            setIsPenaltyArmed(false);
-          }}
-          className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
-        >
-          Cancel
-        </button>
-      ) : null}
-    </div>
-  </div>
-</div>
 
         <div
           ref={handZoneRef}
@@ -1000,7 +960,7 @@ const onDrawPileTap = () => {
                     <div className={`rounded-xl ${selected ? "ring-4 ring-white shadow-2xl" : ""}`}>
                       <UnoCardView
                         card={showFaceDown ? { ...c, color: "wild", value: "wild" } : c}
-                        onClick={viewerIsBot ? undefined : () => Tap(c.id)}
+                        onClick={viewerIsBot ? undefined : () => onCardTap(c.id)}
                         disabled={!myTurn || !revealed || viewerIsBot || (!playable && !selected)}
                         faceDown={showFaceDown}
                         flipMode={flipMode}
@@ -1103,9 +1063,7 @@ const onDrawPileTap = () => {
   );
 }
 
-// ---------------------------------------------------------------------------
 // Sub-components (unchanged)
-// ---------------------------------------------------------------------------
 const tableGridStyle: React.CSSProperties = {
   gridTemplateColumns: "minmax(60px, 1fr) 3fr minmax(60px, 1fr)",
   gridTemplateRows: "auto 1fr",
@@ -1123,25 +1081,13 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-function TurnBadge({
-  label,
-  name,
-  tone,
-}: {
-  label: string;
-  name: string;
-  tone: "green" | "orange";
-}) {
-  const styles =
-    tone === "green"
-      ? "border-[hsl(140_70%_50%)]/60 bg-[hsl(140_70%_42%)]/20 shadow-[0_0_16px_-2px_hsl(140_80%_55%/.7)]"
-      : "border-[hsl(28_95%_60%)]/55 bg-[hsl(28_95%_55%)]/15 shadow-[0_0_14px_-3px_hsl(28_95%_60%/.6)]";
-  const dot =
-    tone === "green" ? "bg-[hsl(140_80%_55%)]" : "bg-[hsl(28_95%_60%)]";
+function TurnBadge({ label, name, tone }: { label: string; name: string; tone: "green" | "orange" }) {
+  const styles = tone === "green"
+    ? "border-[hsl(140_70%_50%)]/60 bg-[hsl(140_70%_42%)]/20 shadow-[0_0_16px_-2px_hsl(140_80%_55%/.7)]"
+    : "border-[hsl(28_95%_60%)]/55 bg-[hsl(28_95%_55%)]/15 shadow-[0_0_14px_-3px_hsl(28_95%_60%/.6)]";
+  const dot = tone === "green" ? "bg-[hsl(140_80%_55%)]" : "bg-[hsl(28_95%_60%)]";
   return (
-    <span
-      className={`flex items-center gap-1.5 px-2 py-1 rounded-full border backdrop-blur-md min-w-0 max-w-[40%] ${styles}`}
-    >
+    <span className={`flex items-center gap-1.5 px-2 py-1 rounded-full border backdrop-blur-md min-w-0 max-w-[40%] ${styles}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${dot} animate-pulse`} />
       <span className="text-[9px] uppercase tracking-widest font-bold text-white/70">{label}</span>
       <span className="text-[11px] font-semibold truncate">{name}</span>
@@ -1149,18 +1095,7 @@ function TurnBadge({
   );
 }
 
-function SeatView({
-  orientation,
-  hand,
-  player,
-  idx,
-  tone,
-  flipMode,
-  score,
-  avatarRef,
-  darkSide,
-  flipMap,
-}: {
+function SeatView({ orientation, hand, player, idx, tone, flipMode, score, avatarRef, darkSide, flipMap }: {
   orientation: "horizontal" | "vertical";
   hand: UnoCard[];
   player: { name: string; kind: "human" | "bot" };
@@ -1178,36 +1113,18 @@ function SeatView({
     <div className="flex flex-col items-center gap-1">
       <div ref={avatarRef} className="relative">
         <Avatar name={player.name} idx={idx} kind={player.kind} size="sm" tone={tone} />
-        <span
-          className="absolute -bottom-1 -left-2 px-1 rounded-md text-[9px] font-bold tabular-nums border border-[#facc15]/50 text-[#facc15] bg-black/70 backdrop-blur-sm"
-          title="Score"
-        >
+        <span className="absolute -bottom-1 -left-2 px-1 rounded-md text-[9px] font-bold tabular-nums border border-[#facc15]/50 text-[#facc15] bg-black/70 backdrop-blur-sm" title="Score">
           {score}
         </span>
       </div>
       <div className="text-[10px] text-white/70 text-center max-w-[90px] truncate">
-        {player.name}
-        {player.kind === "bot" ? " (AI)" : ""}
+        {player.name}{player.kind === "bot" ? " (AI)" : ""}
         <div className="text-white/50">{hand.length} cards</div>
       </div>
-      <div
-        className={`flex items-center ${
-          orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"
-        }`}
-      >
+      <div className={`flex items-center ${orientation === "horizontal" ? "flex-row -space-x-3" : "flex-col -space-y-7"}`}>
         {shown.map((c, i) => (
-          <div
-            key={c.id}
-            style={{
-              transform:
-                orientation === "horizontal"
-                  ? `rotate(${(i - shown.length / 2) * 4}deg)`
-                  : `rotate(90deg)`,
-              zIndex: i,
-            }}
-          >
-            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide}
-              flipMap={flipMap} />
+          <div key={c.id} style={{ transform: orientation === "horizontal" ? `rotate(${(i - shown.length / 2) * 4}deg)` : `rotate(90deg)`, zIndex: i }}>
+            <UnoCardView card={c} faceDown flipMode={flipMode} size="sm" darkSide={darkSide} flipMap={flipMap} />
           </div>
         ))}
         {extra > 0 ? <div className="text-[10px] text-white/60 ml-1">+{extra}</div> : null}
@@ -1216,64 +1133,31 @@ function SeatView({
   );
 }
 
-function PassOverlay({
-  name,
-  idx,
-  variant,
-  onReveal,
-}: {
-  name: string;
-  idx: number;
-  variant: "pass" | "yourturn";
-  onReveal: () => void;
+function PassOverlay({ name, idx, variant, onReveal }: {
+  name: string; idx: number; variant: "pass" | "yourturn"; onReveal: () => void;
 }) {
   const heading = variant === "yourturn" ? "Your turn!" : `${name}'s turn`;
-  const subheading =
-    variant === "yourturn"
-      ? "Take the phone back."
-      : "Pass the phone — only this player should see the next screen.";
+  const subheading = variant === "yourturn" ? "Take the phone back." : "Pass the phone — only this player should see the next screen.";
   return (
     <div className="fixed inset-0 z-50 bg-gradient-to-br from-[hsl(0_60%_15%)] via-black to-black flex flex-col items-center justify-center px-6 text-center animate-[fadeIn_.2s_ease-out]">
-      <div className="mb-4">
-        <Avatar name={name} idx={idx} kind="human" size="lg" tone="viewer" />
-      </div>
-      <div className="text-xs uppercase tracking-widest text-white/50 font-bold mb-2">
-        {variant === "yourturn" ? "Heads up" : "Pass the phone"}
-      </div>
+      <div className="mb-4"><Avatar name={name} idx={idx} kind="human" size="lg" tone="viewer" /></div>
+      <div className="text-xs uppercase tracking-widest text-white/50 font-bold mb-2">{variant === "yourturn" ? "Heads up" : "Pass the phone"}</div>
       <h2 className="text-3xl font-black mb-1">{heading}</h2>
       <div className="text-lg font-semibold text-white/80 mb-1">{name}</div>
       <p className="text-white/60 text-sm max-w-xs mb-8 mt-2">{subheading}</p>
-      <button
-        onClick={onReveal}
-        className="px-8 py-4 rounded-2xl bg-[hsl(140_70%_42%)] text-white font-bold text-lg shadow-lg active:scale-[.98]"
-      >
-        Confirm Identity
-      </button>
+      <button onClick={onReveal} className="px-8 py-4 rounded-2xl bg-[hsl(140_70%_42%)] text-white font-bold text-lg shadow-lg active:scale-[.98]">Confirm Identity</button>
     </div>
   );
 }
 
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose?: () => void;
-  children: React.ReactNode;
-}) {
+function Modal({ title, onClose, children }: { title: string; onClose?: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6">
       <div className="bg-neutral-900 rounded-xl p-5 w-full max-w-xs border border-white/10">
         <div className="text-center text-sm font-semibold mb-3">{title}</div>
         {children}
-        {onClose ? (
-          <button onClick={onClose} className="w-full mt-3 text-xs text-white/60 py-1">
-            Cancel
-          </button>
-        ) : null}
+        {onClose ? <button onClick={onClose} className="w-full mt-3 text-xs text-white/60 py-1">Cancel</button> : null}
       </div>
     </div>
   );
 }
-
