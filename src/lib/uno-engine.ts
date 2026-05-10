@@ -169,7 +169,6 @@ export interface HouseRules {
   sameNumberCombo: boolean;
 }
 
-
 export const DEFAULT_HOUSE_RULES: HouseRules = {
   stackDraws: true,
   jumpIn: false,
@@ -217,7 +216,6 @@ export interface GameState {
   turnSerial?: number;
 }
 
-
 export function cardPointValue(c: UnoCard): number {
   if (c.value === "wild" || c.value === "wild4") return 50;
   if (c.value === "skip" || c.value === "reverse" || c.value === "draw2" || c.value === "flip") return 20;
@@ -244,8 +242,6 @@ export function tallyRoundScore(state: GameState, winnerIdx: number): number {
   return total;
 }
 const COLORS: UnoColor[] = ["red", "yellow", "green", "blue"];
-
-
 
 export function shuffle<T>(arr: T[]): T[] {
   const out = [...arr];
@@ -316,17 +312,7 @@ export function isValidMove(
   return false;
 }
 
-
-function isNumberCard(v: string): boolean {
-  return /^[0-9]$/.test(v);
-}
-
-export function hasSameNumberComboInHand(hand: UnoCard[], playedCard: UnoCard): boolean {
-  if (!isNumberCard(playedCard.value)) return false;
-  return hand.some((card) => isNumberCard(card.value) && card.value === playedCard.value);
-}
-
-export function canStackPendingDraw(state: GameState): boolean {
+function canStackPendingDraw(state: GameState): boolean {
   if (state.pendingDraw <= 0) return false;
   if (!state.houseRules.stackDraws) return false;
 
@@ -343,7 +329,6 @@ export interface NewGameOptions {
   mode?: GameMode;
   previousScores?: number[];
 }
-
 
 export function dealNewGame(opts: NewGameOptions): GameState {
   const houseRules: HouseRules = { ...DEFAULT_HOUSE_RULES, ...(opts.houseRules ?? {}) };
@@ -364,7 +349,7 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     if (firstIdx === -1) firstIdx = 0;
     first = deck.splice(firstIdx, 1)[0];
   }
-  const startColor: UnoColor 
+  const startColor: UnoColor =
     first.color === "wild" ? COLORS[Math.floor(Math.random() * 4)] : (first.color as UnoColor);
   return {
     drawPile: deck,
@@ -397,7 +382,7 @@ export function nameOf(p: PlayerConfig): string {
 }
 
 export function describe(c: UnoCard): string {
-  const colorName 
+  const colorName =
     c.color === "wild" ? "" : c.color.charAt(0).toUpperCase() + c.color.slice(1) + " ";
   const valueName: Record<CardValue, string> = {
     "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
@@ -519,11 +504,27 @@ export function playCard(
     return s;
   }
 
-  if (skipNext) {
-    s.queuedSkipNext = true;
-  }
+const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
-  return s;
+const canCombo =
+  s.houseRules.sameNumberCombo &&
+  isNumberCard(card.value) &&
+  hand.some(
+    (c) =>
+      c.id !== card.id &&
+      isNumberCard(c.value) &&
+      c.value === card.value
+  );
+
+if (skipNext) {
+  s.queuedSkipNext = true;
+  if (canCombo) {
+    // keep turn on the same player for combo chaining
+    skipNext = false;
+  }
+}
+
+return s;
 }
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
@@ -540,7 +541,6 @@ export function resolveSwap(state: GameState, targetIdx: number): GameState {
   s.currentPlayer = nextPlayer(s);
   return s;
 }
-
 
 export function hasPlayableCard(state: GameState, playerIdx: number): boolean {
   const top = state.discardPile[state.discardPile.length - 1];
@@ -738,8 +738,4 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
-
-
-
-
 
