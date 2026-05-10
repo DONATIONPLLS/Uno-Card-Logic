@@ -210,10 +210,10 @@ export function SetupScreen({
                 onChange={(v) => setRules({ ...rules, allWild: v })}
               />
               <Toggle
-  label="Same‑card combo"
-  hint="After playing a card, you can play another identical card (except wilds)"
-  value={rules.sameCardCombo}
-  onChange={(v) => setRules({ ...rules, sameCardCombo: v })}
+  label="Same-number combo"
+  hint="After playing a number card, you can play another card with the same number, no matter the color."
+  value={rules.sameNumberCombo}
+  onChange={(v) => setRules({ ...rules, sameNumberCombo: v })}
 />
             </div>
           </section>
@@ -228,7 +228,7 @@ export function SetupScreen({
               <RuleRow on={rules.forcePlay} label="Force play after draw" />
               <RuleRow on={rules.sevenZero} label="7-0 hand swaps" />
               <RuleRow on={rules.allWild} label="All cards wild" />
-              <RuleRow on={rules.sameCardCombo} label="Same‑card combo" />
+              <RuleRow on={rules.sameNumberCombo} label="Same-number combo" />
             </div>
           </section>
         )}
@@ -291,3 +291,5 @@ function Toggle({
     </button>
   );
 }
+
+
