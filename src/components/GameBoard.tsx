@@ -15,7 +15,7 @@ import {
   type UnoColor,
   type WildColor,
   drawSingle,
-  hasSameNumberCombo,
+  sameNumberCombo,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
 import { RulesPanel } from "@/components/RulesPanel";
@@ -125,6 +125,7 @@ export function GameBoard({
   const [flights, setFlights] = useState<Flight[]>([]);
   const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
   const prevGameRef = useRef<GameState>(game);
+  const prevDrawGameRef = useRef<GameState>(game);
   const prevDrawLenRef = useRef<number>(game.drawPile.length);
   const gameRef = useRef<GameState | null>(game);
   gameRef.current = game;
@@ -258,6 +259,7 @@ export function GameBoard({
     endTurn: () => setGame((g) => endTurn(g, g.currentPlayer)),
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
+  const isRemoteControlled = actions !== undefined;
 
    // ── Reset combo when the turn changes or a draw happens ──
 useEffect(() => {
@@ -528,7 +530,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
     let playable: boolean;
     if (comboActive) {
-      playable = hasSameNumberCombo(game.hands[handViewIdx], card, game.houseRules);
+      playable = sameNumberCombo(game.hands[handViewIdx], card, game.houseRules);
     } else {
       playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     }
@@ -550,7 +552,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   if (!card) return;
 
   const actualPlayable = comboActive
-    ? hasSameNumberCombo(game.hands[handViewIdx], card, game.houseRules)
+    ? sameNumberCombo(game.hands[handViewIdx], card, game.houseRules)
     : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
 
   if (!actualPlayable) return;
@@ -561,7 +563,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     return;
   }
 
-  const canContinueCombo = hasSameNumberCombo(myHand, card, game.houseRules);
+  const canContinueCombo = sameNumberCombo(myHand, card, game.houseRules);
 
   captureOriginFor(selectedId);
   sfx.swish();
@@ -671,7 +673,7 @@ const resolvePenaltyDraw = () => {
   const selectedPlayable =
     selectedCard !== null &&
     (comboActive
-      ? hasSameNumberCombo(game.hands[handViewIdx], selectedCard, game.houseRules)
+      ? sameNumberCombo(game.hands[handViewIdx], selectedCard, game.houseRules)
       : isValidMove(selectedCard, top, game.activeColor, game.pendingDraw, game.houseRules));
 
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
@@ -842,7 +844,7 @@ const resolvePenaltyDraw = () => {
             <span className="text-[10px] text-white/70">
               {game.pendingDraw > 0
                 ? drawArmed
-                  ? `Draw +${game.pendingDraw}`
+                  ? `Draw [${game.pendingDraw}]`
                   : `Draw (${game.pendingDraw})`
                 : hasDrawnThisTurn
                   ? "Drew"
