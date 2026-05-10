@@ -10,12 +10,12 @@ import {
   nextPlayer,
   playCard,
   resolveSwap,
-  drawPenaltyThenEnd,
   type GameState,
   type UnoCard,
   type UnoColor,
-  type WildColor, // <-- add this
+  type WildColor,
   drawSingle,
+  hasSameNumberCombo,
 } from "@/lib/uno-engine";
 import { UnoCardView } from "@/components/UnoCardView";
 import { RulesPanel } from "@/components/RulesPanel";
@@ -130,12 +130,40 @@ export function GameBoard({
   gameRef.current = game;
   const drawIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [turnSettling, setTurnSettling] = useState(false);
+  const settleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSettleTimeout = useCallback(() => {
+    if (settleTimeoutRef.current) {
+      clearTimeout(settleTimeoutRef.current);
+      settleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const settleThen = useCallback(
+    (next: () => void) => {
+      clearSettleTimeout();
+      setTurnSettling(true);
+      settleTimeoutRef.current = setTimeout(() => {
+        next();
+        setTurnSettling(false);
+        settleTimeoutRef.current = null;
+      }, 500);
+    },
+    [clearSettleTimeout],
+  );
 
   // Real startDrawAnimation (not a placeholder)
   const startDrawAnimation = useCallback(
-    (playerIdx: number, numCards: number, onComplete?: () => void) => {
+    (
+      playerIdx: number,
+      numCards: number,
+      onComplete?: () => void,
+      mutateGame = true,
+    ) => {
       if (isDrawing) return;
       setIsDrawing(true);
+      clearSettleTimeout();
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
 
       let count = 0;
@@ -172,7 +200,9 @@ export function GameBoard({
         setFlights((prev) => [...prev, flight]);
         setTimeout(() => {
           setFlights((prev) => prev.filter((f) => f.id !== flightId));
-          setGame((g) => drawSingle(g, playerIdx));
+          if (mutateGame) {
+            setGame((g) => drawSingle(g, playerIdx));
+          }
           if (currentIndex === numCards - 1) {
             setTimeout(() => {
               setIsDrawing(false);
@@ -186,35 +216,27 @@ export function GameBoard({
       };
       launchOne();
     },
-    [handViewIdx, isDrawing, setFlights, setGame],
+    [clearSettleTimeout, handViewIdx, isDrawing, setFlights, setGame],
   );
 
   const processBotTurn = useCallback(() => {
     const g = gameRef.current;
-    if (!g || g.winner || g.pendingAction || isDrawing) return;
+    if (!g || g.winner || g.pendingAction || isDrawing || turnSettling) return;
     if (g.players[g.currentPlayer]?.kind !== "bot") return;
 
     const move = chooseBotMove(g, g.currentPlayer);
 
     if (move.type === "draw") {
       const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
-      if (g.pendingDraw > 0) {
-        startDrawAnimation(g.currentPlayer, toDraw, () => {
-          setGame((prev) => drawPenaltyThenEnd(prev, prev.currentPlayer));
-        });
-      } else {
-        startDrawAnimation(g.currentPlayer, toDraw, () => {
+      startDrawAnimation(g.currentPlayer, toDraw, () => {
+        settleThen(() => {
           setGame((prev) => endTurn(prev, prev.currentPlayer));
         });
-      }
+      });
     } else if (move.type === "play") {
       setGame((prev) => playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor));
-      const delay = 800 + Math.random() * 600;
-      botTimeoutRef.current = setTimeout(() => {
-        setGame((prev) => endTurn(prev, prev.currentPlayer));
-      }, delay);
     }
-  }, [startDrawAnimation, setGame, isDrawing]);
+  }, [settleThen, startDrawAnimation, setGame, isDrawing, turnSettling]);
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
@@ -306,13 +328,51 @@ useEffect(() => {
     pendingPlayFlight.current = true;
     const ids = newFlights.map((f) => f.id);
     const t = setTimeout(() => {
-  setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
-  if (newTopSuppress) setSuppressedTopId(null);
-  pendingPlayFlight.current = false;
-  act.endTurn();
-}, 520);
+      setFlights((prevFs) => prevFs.filter((f) => !ids.includes(f.id)));
+      if (newTopSuppress) setSuppressedTopId(null);
+      pendingPlayFlight.current = false;
+
+      const shouldPassTurn =
+        !isRemoteControlled &&
+        !comboActive &&
+        game.pendingAction === null &&
+        game.winner === null;
+
+      if (shouldPassTurn) {
+        settleThen(() => {
+          act.endTurn();
+        });
+      }
+    }, 520);
     return () => clearTimeout(t);
-  }, [game, handViewIdx]);
+  }, [act, comboActive, game, handViewIdx, isRemoteControlled, settleThen]);
+
+  // Auto-draw animation for penalty draws resolved by the engine
+  useEffect(() => {
+    const prev = prevDrawGameRef.current;
+    prevDrawGameRef.current = game;
+    if (prev === game) return;
+    if (isDrawing || turnSettling) return;
+    if (prev.currentPlayer !== game.currentPlayer) return;
+    if (prev.pendingDraw <= 0 || game.pendingDraw !== 0) return;
+
+    const playerIdx = game.currentPlayer;
+    const before = prev.hands[playerIdx]?.length ?? 0;
+    const after = game.hands[playerIdx]?.length ?? 0;
+    const drawnCount = after - before;
+    if (drawnCount <= 0) return;
+
+    startDrawAnimation(
+      playerIdx,
+      drawnCount,
+      () => {
+        settleThen(() => {
+          act.endTurn();
+        });
+      },
+      false,
+    );
+  }, [act, game, isDrawing, settleThen, startDrawAnimation, turnSettling]);
 
   // Win detection
   useEffect(() => {
@@ -420,7 +480,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   // Bot loop
   useEffect(() => {
-    if (!enableBots || game.winner || isDrawing || pendingPlayFlight.current) return;
+    if (!enableBots || game.winner || isDrawing || turnSettling || pendingPlayFlight.current) return;
     const current = game.players[game.currentPlayer];
     if (!current || current.kind !== "bot") return;
     const delay = 1200 + Math.random() * 800;
@@ -461,15 +521,14 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   };
 
   const onCardTap = (cardId: string) => {
-    if (!myTurn || !revealed || viewerIsBot) return;
+    if (!myTurn || !revealed || viewerIsBot || turnSettling) return;
     if (game.pendingAction !== null) return;
     const card = game.hands[handViewIdx].find((c) => c.id === cardId);
     if (!card) return;
 
     let playable: boolean;
     if (comboActive) {
-      playable = card.color === top.color && card.value === top.value;
-      if (!game.houseRules.sameCardCombo) playable = false;
+      playable = hasSameNumberCombo(game.hands[handViewIdx], card, game.houseRules);
     } else {
       playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
     }
@@ -491,12 +550,10 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   if (!card) return;
 
   const actualPlayable = comboActive
-    ? card.color === top.color && card.value === top.value && game.houseRules.sameCardCombo
+    ? hasSameNumberCombo(game.hands[handViewIdx], card, game.houseRules)
     : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
 
   if (!actualPlayable) return;
-
-  const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
   // wild / color-pick cards use the wild color, not a special value check
   if (card.color === "wild") {
@@ -504,16 +561,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     return;
   }
 
-  const canContinueCombo =
-    game.houseRules.sameCardCombo &&
-    isNumberCard(card.value) &&
-    game.hands[handViewIdx].some(
-      (c) =>
-        c.id !== card.id &&
-        isNumberCard(c.value) &&
-        c.color === card.color &&
-        c.value === card.value
-    );
+  const canContinueCombo = hasSameNumberCombo(myHand, card, game.houseRules);
 
   captureOriginFor(selectedId);
   sfx.swish();
@@ -540,7 +588,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   };
 
 const resolvePenaltyDraw = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null || turnSettling) return;
   if (isDrawing) return;
 
   setSelectedId(null);
@@ -550,12 +598,14 @@ const resolvePenaltyDraw = () => {
 
   const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
   startDrawAnimation(handViewIdx, cardsToDraw, () => {
-    act.endTurn();
+    settleThen(() => {
+      act.endTurn();
+    });
   });
 };
 
   const onDrawPileTap = () => {
-  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null || turnSettling) return;
   if (isDrawing) return;
 
   if (game.pendingDraw > 0) {
@@ -609,18 +659,19 @@ const resolvePenaltyDraw = () => {
   const myHand = game.hands[handViewIdx] ?? [];
 
   const canEndTurn =
-  myTurn &&
-  !isDrawing &&
-  game.pendingAction === null &&
-  !pickColorFor &&
-  !swapPickerFor &&
-  (hasDrawnThisTurn || comboActive);
+    myTurn &&
+    !isDrawing &&
+    !turnSettling &&
+    game.pendingAction === null &&
+    !pickColorFor &&
+    !swapPickerFor &&
+    (hasDrawnThisTurn || comboActive);
 
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
     (comboActive
-      ? (selectedCard.color === top.color && selectedCard.value === top.value)
+      ? hasSameNumberCombo(game.hands[handViewIdx], selectedCard, game.houseRules)
       : isValidMove(selectedCard, top, game.activeColor, game.pendingDraw, game.houseRules));
 
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
@@ -856,17 +907,26 @@ const resolvePenaltyDraw = () => {
           </div>
 
           {/* Buttons */}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing ? (
+          <div className="flex flex-row flex-nowrap items-center justify-end gap-2 overflow-x-auto">
+            {game.pendingDraw > 0 && myTurn && revealed && !viewerIsBot && !isDrawing && !turnSettling ? (
               <button
                 onClick={resolvePenaltyDraw}
-                className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95"
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-red-500 text-white active:scale-95 whitespace-nowrap"
               >
-                Draw +{game.pendingDraw}
+                Draw {game.pendingDraw}
               </button>
             ) : null}
 
-            {comboActive && selectedId ? (
+            {selectedId && game.pendingDraw > 0 ? (
+              <button
+                onClick={handleCancelSelection}
+                className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95 whitespace-nowrap"
+              >
+                Cancel
+              </button>
+            ) : null}
+
+            {game.pendingDraw <= 0 && comboActive && selectedId ? (
               <>
                 <button
                   onClick={confirmPlay}
@@ -881,22 +941,22 @@ const resolvePenaltyDraw = () => {
                 </button>
                 <button
                   onClick={handleCancelSelection}
-                  className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95"
+                  className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95 whitespace-nowrap"
                 >
                   Cancel
                 </button>
               </>
-            ) : canEndTurn && !selectedId ? (
+            ) : game.pendingDraw <= 0 && canEndTurn && !selectedId ? (
               <button
                 onClick={onPass}
-                className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95"
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-[hsl(48_100%_50%)] text-black active:scale-95 whitespace-nowrap"
               >
                 End Turn
               </button>
-            ) : selectedId ? (
+            ) : selectedId && game.pendingDraw <= 0 ? (
               <button
                 onClick={handleCancelSelection}
-                className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10"
+                className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10 whitespace-nowrap"
               >
                 Cancel
               </button>
@@ -1216,5 +1276,3 @@ function Modal({
     </div>
   );
 }
-
-
