@@ -430,6 +430,8 @@ export function nextPlayer(state: GameState, skip = false): number {
   return ((state.currentPlayer + step) % n + n) % n;
 }
 
+const isNumberCard = (v: string) => /^[0-9]$/.test(v);
+
 export function playCard(
   state: GameState,
   playerIdx: number,
@@ -510,32 +512,24 @@ export function playCard(
     return s;
   }
 
-const isNumberCard = (v: string) => /^[0-9]$/.test(v);
-
-const canCombo = hasSameNumberCombo(hand, card, s.houseRules);
-
-if (skipNext) {
-  s.queuedSkipNext = true;
-  if (canCombo) {
-    // keep turn on the same player for combo chaining
-    skipNext = false;
+  if (skipNext) {
+    s.queuedSkipNext = true;
   }
+
+  return s;
 }
 
-return s;
-}
-
-export function hasSameNumberCombo(
+export function sameNumberCombo(
   hand: UnoCard[],
   played: UnoCard,
   rules: HouseRules,
 ): boolean {
   if (!rules.sameCardCombo) return false;
-  if (!/^[0-9]$/.test(played.value)) return false;
+  if (!isNumberCard(played.value)) return false;
   return hand.some(
     (c) =>
       c.id !== played.id &&
-      /^[0-9]$/.test(c.value) &&
+      isNumberCard(c.value) &&
       c.value === played.value,
   );
 }
@@ -562,6 +556,8 @@ export function hasPlayableCard(state: GameState, playerIdx: number): boolean {
     isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules),
   );
 }
+
+export const hasSameNumberCombo = sameNumberCombo;
 
 export function drawOne(state: GameState, playerIdx: number): GameState {
   let s = cloneState(state);
