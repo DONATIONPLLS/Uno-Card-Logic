@@ -512,15 +512,7 @@ export function playCard(
 
 const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
-const canCombo =
-  s.houseRules.sameCardCombo &&
-  isNumberCard(card.value) &&
-  hand.some(
-    (c) =>
-      c.id !== card.id &&
-      c.color === card.color &&
-      c.value === card.value
-  );
+const canCombo = hasSameNumberCombo(hand, card, s.houseRules);
 
 if (skipNext) {
   s.queuedSkipNext = true;
@@ -531,6 +523,21 @@ if (skipNext) {
 }
 
 return s;
+}
+
+export function hasSameNumberCombo(
+  hand: UnoCard[],
+  played: UnoCard,
+  rules: HouseRules,
+): boolean {
+  if (!rules.sameCardCombo) return false;
+  if (!/^[0-9]$/.test(played.value)) return false;
+  return hand.some(
+    (c) =>
+      c.id !== played.id &&
+      /^[0-9]$/.test(c.value) &&
+      c.value === played.value,
+  );
 }
 
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
@@ -627,11 +634,10 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
 }
 
 /**
- * Draw the pending penalty cards and immediately end the player's turn.
- * This mirrors the official rule: the victim draws and is skipped.
+ * Draw the pending penalty cards. The turn stays on the same player so the
+ * UI can animate the draw before advancing via endTurn().
  */
 export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
-  // Draw the required cards (same logic as drawOne but we force endTurn)
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
 
@@ -639,12 +645,7 @@ export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameSta
   s = drawCards(s, playerIdx, drawn);
   s.pendingDraw = 0;
 
-  // Log the draw
   s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
-
-  // Now skip the player
-  s.currentPlayer = nextPlayer(s);
-  s.turnSerial = (s.turnSerial ?? 0) + 1;
   return s;
 }
 
@@ -751,5 +752,3 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
-
-
