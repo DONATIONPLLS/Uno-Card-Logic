@@ -166,7 +166,7 @@ export interface HouseRules {
   drawUntilPlayable: boolean;
   sevenZero: boolean;
   allWild: boolean;
-  sameCardCombo: boolean;   // new
+  sameNumberCombo: boolean;
 }
 
 
@@ -177,7 +177,7 @@ export const DEFAULT_HOUSE_RULES: HouseRules = {
   drawUntilPlayable: false,
   sevenZero: false,
   allWild: false,
-  sameCardCombo: false,
+  sameNumberCombo: false,
 };
 
 export type GameMode = "standard" | "chaos" | "flip" | "allwild" | "custom";
@@ -188,7 +188,7 @@ export const MODE_PRESETS: Record<Exclude<GameMode, "custom">, HouseRules> = {
   flip: { ...DEFAULT_HOUSE_RULES, stackDraws: true, jumpIn: true, forcePlay: true },
   allwild: { ...DEFAULT_HOUSE_RULES, allWild: true },
 };
-// sameCardCombo stays false – only toggleable in custom.
+// sameNumberCombo stays false – only toggleable in custom.
 
 export interface PendingSwap {
   type: "swap7";
@@ -317,7 +317,16 @@ export function isValidMove(
 }
 
 
-function canStackPendingDraw(state: GameState): boolean {
+function isNumberCard(v: string): boolean {
+  return /^[0-9]$/.test(v);
+}
+
+export function hasSameNumberComboInHand(hand: UnoCard[], playedCard: UnoCard): boolean {
+  if (!isNumberCard(playedCard.value)) return false;
+  return hand.some((card) => isNumberCard(card.value) && card.value === playedCard.value);
+}
+
+export function canStackPendingDraw(state: GameState): boolean {
   if (state.pendingDraw <= 0) return false;
   if (!state.houseRules.stackDraws) return false;
 
@@ -355,7 +364,7 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     if (firstIdx === -1) firstIdx = 0;
     first = deck.splice(firstIdx, 1)[0];
   }
-  const startColor: UnoColor =
+  const startColor: UnoColor 
     first.color === "wild" ? COLORS[Math.floor(Math.random() * 4)] : (first.color as UnoColor);
   return {
     drawPile: deck,
@@ -388,7 +397,7 @@ export function nameOf(p: PlayerConfig): string {
 }
 
 export function describe(c: UnoCard): string {
-  const colorName =
+  const colorName 
     c.color === "wild" ? "" : c.color.charAt(0).toUpperCase() + c.color.slice(1) + " ";
   const valueName: Record<CardValue, string> = {
     "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
@@ -429,8 +438,6 @@ export function nextPlayer(state: GameState, skip = false): number {
   const step = (skip ? 2 : 1) * state.direction;
   return ((state.currentPlayer + step) % n + n) % n;
 }
-
-const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
 export function playCard(
   state: GameState,
@@ -519,21 +526,6 @@ export function playCard(
   return s;
 }
 
-export function sameNumberCombo(
-  hand: UnoCard[],
-  played: UnoCard,
-  rules: HouseRules,
-): boolean {
-  if (!rules.sameCardCombo) return false;
-  if (!isNumberCard(played.value)) return false;
-  return hand.some(
-    (c) =>
-      c.id !== played.id &&
-      isNumberCard(c.value) &&
-      c.value === played.value,
-  );
-}
-
 export function resolveSwap(state: GameState, targetIdx: number): GameState {
   if (state.pendingAction?.type !== "swap7") return state;
   const s = cloneState(state);
@@ -556,8 +548,6 @@ export function hasPlayableCard(state: GameState, playerIdx: number): boolean {
     isValidMove(c, top, state.activeColor, state.pendingDraw, state.houseRules),
   );
 }
-
-export const hasSameNumberCombo = sameNumberCombo;
 
 export function drawOne(state: GameState, playerIdx: number): GameState {
   let s = cloneState(state);
@@ -619,21 +609,16 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
     s.currentPlayer = nextPlayer(s);
   }
 
-  // If the next player cannot defend a pending draw, auto-resolve it immediately.
-  if (s.pendingDraw > 0 && !canStackPendingDraw(s)) {
-    s = drawPenaltyThenEnd(s, s.currentPlayer);
-    return s;
-  }
-
   s.turnSerial = (s.turnSerial ?? 0) + 1;
   return s;
 }
 
 /**
- * Draw the pending penalty cards. The turn stays on the same player so the
- * UI can animate the draw before advancing via endTurn().
+ * Draw the pending penalty cards and immediately end the player's turn.
+ * This mirrors the official rule: the victim draws and is skipped.
  */
 export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
+  // Draw the required cards (same logic as drawOne but we force endTurn)
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
 
@@ -641,7 +626,12 @@ export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameSta
   s = drawCards(s, playerIdx, drawn);
   s.pendingDraw = 0;
 
+  // Log the draw
   s.log.unshift(`${nameOf(s.players[playerIdx])} drew ${drawn} card${drawn > 1 ? "s" : ""}.`);
+
+  // Now skip the player
+  s.currentPlayer = nextPlayer(s);
+  s.turnSerial = (s.turnSerial ?? 0) + 1;
   return s;
 }
 
@@ -748,3 +738,8 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
+
+
+
+
+
