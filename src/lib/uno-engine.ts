@@ -263,15 +263,30 @@ export function shuffle<T>(arr: T[]): T[] {
  *   Previously the code only allowed same-value stacking, making it
  *   impossible to play a colour-matching non-draw card.
  */
+const isNumberValue = (v: string) => /^[0-9]$/.test(v);
+
 export function isValidMove(
   card: UnoCard,
   topCard: UnoCard,
   activeColor: UnoColor,
   pendingDraw: number,
   rules: HouseRules,
+  comboActive = false,
 ): boolean {
   // ── All-Wild mode: every card plays on everything ──
   if (rules.allWild) return true;
+
+  // Same Number Combo takes priority when the combo chain is active.
+  // Any number card with the same value is allowed, regardless of color.
+  if (
+    comboActive &&
+    rules.sameNumberCombo &&
+    isNumberValue(card.value) &&
+    isNumberValue(topCard.value) &&
+    card.value === topCard.value
+  ) {
+    return true;
+  }
 
   // ── Pending draw: only stacking moves are legal ──
   if (pendingDraw > 0) {
@@ -728,4 +743,6 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
+
+
 
