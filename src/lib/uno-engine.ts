@@ -312,16 +312,6 @@ export function isValidMove(
   return false;
 }
 
-function canStackPendingDraw(state: GameState): boolean {
-  if (state.pendingDraw <= 0) return false;
-  if (!state.houseRules.stackDraws) return false;
-
-  const top = state.discardPile[state.discardPile.length - 1];
-  const playerIdx = state.currentPlayer;
-  return state.hands[playerIdx].some((card) =>
-    isValidMove(card, top, state.activeColor, state.pendingDraw, state.houseRules),
-  );
-}
 
 export interface NewGameOptions {
   players: PlayerConfig[];
