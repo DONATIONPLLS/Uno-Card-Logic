@@ -263,7 +263,7 @@ export function shuffle<T>(arr: T[]): T[] {
  *   Previously the code only allowed same-value stacking, making it
  *   impossible to play a colour-matching non-draw card.
  */
-const isNumberValue = (v: string) => /^[0-9]$/.test(v);
+const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
 export function isValidMove(
   card: UnoCard,
@@ -281,8 +281,8 @@ export function isValidMove(
   if (
     comboActive &&
     rules.sameNumberCombo &&
-    isNumberValue(card.value) &&
-    isNumberValue(topCard.value) &&
+    isNumberCard(card.value) &&
+    isNumberCard(topCard.value) &&
     card.value === topCard.value
   ) {
     return true;
@@ -434,6 +434,7 @@ export function playCard(
   playerIdx: number,
   cardId: string,
   chosenColor?: UnoColor,
+  comboActive = false,
 ): GameState {
   let s = cloneState(state);
   if (s.winner !== null || s.pendingAction !== null) return s;
@@ -443,7 +444,7 @@ export function playCard(
   if (idx === -1) return s;
   const card = hand[idx];
   const top = s.discardPile[s.discardPile.length - 1];
-  if (!isValidMove(card, top, s.activeColor, s.pendingDraw, s.houseRules)) return s;
+  if (!isValidMove(card, top, s.activeColor, s.pendingDraw, s.houseRules, comboActive)) return s;
 
   hand.splice(idx, 1);
   s.discardPile.push(card);
@@ -508,8 +509,6 @@ export function playCard(
     );
     return s;
   }
-
-const isNumberCard = (v: string) => /^[0-9]$/.test(v);
 
 const canCombo =
   s.houseRules.sameNumberCombo &&
@@ -644,12 +643,12 @@ export type BotMove =
   | { type: "play"; cardId: string; chosenColor?: UnoColor }
   | { type: "draw" };
 
-export function chooseBotMove(state: GameState, playerIdx: number): BotMove {
+export function chooseBotMove(state: GameState, playerIdx: number, comboActive = false): BotMove {
   const hand = state.hands[playerIdx];
   const top = state.discardPile[state.discardPile.length - 1];
   const rules = state.houseRules;
   const playable = hand.filter((c) =>
-    isValidMove(c, top, state.activeColor, state.pendingDraw, rules),
+    isValidMove(c, top, state.activeColor, state.pendingDraw, rules, comboActive),
   );
   if (playable.length === 0) return { type: "draw" };
 
@@ -743,6 +742,8 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
+
+
 
 
 
