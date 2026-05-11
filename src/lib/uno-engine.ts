@@ -273,20 +273,14 @@ export function isValidMove(
   rules: HouseRules,
   comboActive = false,
 ): boolean {
+  // Same Number Combo is locked down completely while the chain is active.
+  // The only legal follow-up is an exact matching number card.
+  if (comboActive) {
+    return isNumberCard(card.value) && card.value === topCard.value;
+  }
+
   // ── All-Wild mode: every card plays on everything ──
   if (rules.allWild) return true;
-
-  // Same Number Combo takes priority when the combo chain is active.
-  // Any number card with the same value is allowed, regardless of color.
-  if (
-    comboActive &&
-    rules.sameNumberCombo &&
-    isNumberCard(card.value) &&
-    isNumberCard(topCard.value) &&
-    card.value === topCard.value
-  ) {
-    return true;
-  }
 
   // ── Pending draw: only stacking moves are legal ──
   if (pendingDraw > 0) {
@@ -742,6 +736,8 @@ export function cloneState(s: GameState): GameState {
     flipMap: { ...s.flipMap },
   };
  }
+
+
 
 
 
