@@ -132,7 +132,6 @@ export function GameBoard({
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const drawPileRef = useRef<HTMLDivElement | null>(null);
   const discardRef = useRef<HTMLDivElement | null>(null);
-  const handZoneRef = useRef<HTMLDivElement | null>(null);
   const pendingOriginRef = useRef<PendingOrigin | null>(null);
   const [flights, setFlights] = useState<Flight[]>([]);
   const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
@@ -159,18 +158,11 @@ export function GameBoard({
         if (!src) return;
         const sRect = src.getBoundingClientRect();
 
-        let endX: number, endY: number;
-        if (playerIdx === handViewIdx && handZoneRef.current) {
-          const hz = handZoneRef.current.getBoundingClientRect();
-          endX = hz.right - 40;
-          endY = hz.top + hz.height / 2;
-        } else {
-          const seat = seatRefs.current[playerIdx];
-          if (!seat) return;
-          const seatRect = seat.getBoundingClientRect();
-          endX = seatRect.left + seatRect.width / 2;
-          endY = seatRect.top + seatRect.height / 2;
-        }
+        const seat = seatRefs.current[playerIdx];
+        if (!seat) return;
+        const seatRect = seat.getBoundingClientRect();
+        const endX = seatRect.left + seatRect.width / 2;
+        const endY = seatRect.top + seatRect.height / 2;
 
         const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
         const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
@@ -976,7 +968,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
                 idx={handViewIdx}
                 kind={viewerPlayer?.kind ?? "human"}
                 size="sm"
-                tone={myTurn ? "active" : "idle"}
+                tone={toneFor(handViewIdx)}
               />
             </div>
             <span className="text-sm font-semibold truncate">
@@ -1015,7 +1007,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
             ) : selectedId ? (
               <button
                 onClick={handleCancelSelection}
-                className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10 whitespace-nowrap shrink-0"
+                className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95 whitespace-nowrap shrink-0"
               >
                 Cancel
               </button>
@@ -1024,7 +1016,6 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
         </div>
 
         <div
-          ref={handZoneRef}
           className="px-3 scroll-smooth"
           style={{ overflowX: "auto", overflowY: "visible", paddingTop: "2.5rem" }}
         >
@@ -1341,6 +1332,8 @@ function Modal({
     </div>
   );
 }
+
+
 
 
 
