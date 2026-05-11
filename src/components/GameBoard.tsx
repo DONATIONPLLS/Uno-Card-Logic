@@ -1,5 +1,5 @@
 // src/components/GameBoard.tsx
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type CSSProperties, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   chooseBotMove,
@@ -45,6 +45,8 @@ const impactHex: Record<UnoColor, string> = {
   purple: "#a78bfa",
 };
 
+const TURN_SETTLE_DELAY = 500;
+
 type SeatPos = "top" | "left" | "right";
 
 function seatLayout(n: number): SeatPos[] {
@@ -54,7 +56,7 @@ function seatLayout(n: number): SeatPos[] {
 }
 
 export interface GameActions {
-  play: (cardId: string, color?: UnoColor) => void;
+  play: (cardId: string, color?: UnoColor, comboActive?: boolean) => void;
   draw: () => void;
   endTurn: (skipNext?: boolean) => void;
   resolveSwap: (targetIdx: number) => void;
@@ -202,14 +204,15 @@ export function GameBoard({
 
   const processBotTurn = useCallback(() => {
     const g = gameRef.current;
-    if (!g || g.winner || g.pendingAction || isDrawing) return;
+    if (!g || g.winner || g.pendingAction || isDrawing || settleTimeoutRef.current) return;
     if (g.players[g.currentPlayer]?.kind !== "bot") return;
 
-    const move = chooseBotMove(g, g.currentPlayer);
+    const move = chooseBotMove(g, g.currentPlayer, comboActive);
 
     if (move.type === "draw") {
       const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
       const isPenaltyDraw = g.pendingDraw > 0;
+      setComboActive(false);
       if (isPenaltyDraw) {
         startDrawAnimation(g.currentPlayer, toDraw, () => {
           if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
@@ -222,11 +225,21 @@ export function GameBoard({
             if (current.currentPlayer !== playerIdx) return;
             if ((current.turnSerial ?? 0) !== turnToken) return;
             setGame((prev) => endTurn(prev, prev.currentPlayer));
-          }, 500);
+          }, TURN_SETTLE_DELAY);
         });
       } else {
         startDrawAnimation(g.currentPlayer, toDraw, () => {
-          setGame((prev) => endTurn(prev, prev.currentPlayer));
+          if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
+          const turnToken = g.turnSerial ?? 0;
+          const playerIdx = g.currentPlayer;
+          settleTimeoutRef.current = setTimeout(() => {
+            settleTimeoutRef.current = null;
+            const current = gameRef.current;
+            if (!current) return;
+            if (current.currentPlayer !== playerIdx) return;
+            if ((current.turnSerial ?? 0) !== turnToken) return;
+            setGame((prev) => endTurn(prev, prev.currentPlayer));
+          }, TURN_SETTLE_DELAY);
         });
       }
     } else if (move.type === "play") {
@@ -234,18 +247,25 @@ export function GameBoard({
       const holdForCombo =
         !!chosenCard &&
         hasMatchingNumberInHand(g.hands[g.currentPlayer], chosenCard);
-      setGame((prev) => playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor));
-      const delay = 800 + Math.random() * 600;
+      setGame((prev) => playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor, comboActive));
+      setComboActive(holdForCombo);
       if (!holdForCombo) {
         botTimeoutRef.current = setTimeout(() => {
           setGame((prev) => endTurn(prev, prev.currentPlayer));
-        }, delay);
+        }, TURN_SETTLE_DELAY);
       }
     }
-  }, [startDrawAnimation, setGame, isDrawing]);
+  }, [startDrawAnimation, setGame, isDrawing, comboActive]);
 
   const currentIdx = game.currentPlayer;
   const currentPlayer = game.players[currentIdx];
+
+  useEffect(() => {
+    if (!isPassAndPlay || viewerIdx !== undefined || game.winner !== null) return;
+    if (currentPlayer?.kind !== "human") return;
+    setViewedPlayerIndex(currentIdx);
+  }, [isPassAndPlay, viewerIdx, game.winner, currentIdx, currentPlayer?.kind]);
+
   const myTurn = handViewIdx === currentIdx && game.winner === null;
   const isHumanTurn = currentPlayer?.kind === "human" && game.winner === null;
   const top = game.discardPile[game.discardPile.length - 1];
@@ -259,18 +279,19 @@ export function GameBoard({
       : top;
 
   const act: GameActions = actions ?? {
-    play: (cardId, color) => setGame((g) => playCard(g, g.currentPlayer, cardId, color)),
+    play: (cardId, color, combo) => setGame((g) => playCard(g, g.currentPlayer, cardId, color, combo)),
     draw: () => setGame((g) => drawOne(g, g.currentPlayer)),
     endTurn: () => setGame((g) => endTurn(g, g.currentPlayer)),
     resolveSwap: (target) => setGame((g) => resolveSwap(g, target)),
   };
 
-   // ── Reset combo when the turn changes or a draw happens ──
-useEffect(() => {
-  if (currentIdx !== handViewIdx || game.pendingAction || game.winner) {
+  useEffect(() => {
+    setSelectedId(null);
+    setPickColorFor(null);
+    setHasDrawnThisTurn(false);
+    setDrawArmed(false);
     setComboActive(false);
-  }
-}, [currentIdx, handViewIdx, game.pendingAction, game.winner]);
+  }, [turnSerial, game.pendingAction, game.winner]);
 
   // ── Card flight animations (play only) ──
   useEffect(() => {
@@ -349,7 +370,7 @@ useEffect(() => {
       if (!shouldHoldForCombo) {
         act.endTurn();
       }
-    }, 520);
+    }, TURN_SETTLE_DELAY);
     return () => clearTimeout(t);
   }, [game, handViewIdx]);
 
@@ -618,7 +639,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     captureOriginFor(selectedId);
     sfx.swish();
     haptics.medium();
-    act.play(selectedId);
+    act.play(selectedId, undefined, comboActive);
     setSelectedId(null);
     setComboActive(canContinueCombo);
   };
@@ -627,7 +648,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     if (!pickColorFor) return;
     captureOriginFor(pickColorFor);
     sfx.swish(); haptics.medium();
-    act.play(pickColorFor, color);
+    act.play(pickColorFor, color, comboActive);
     setPickColorFor(null);
     setSelectedId(null);
     setComboActive(false); // color pick ends combo possibility
@@ -645,7 +666,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     settleTimeoutRef.current = setTimeout(() => {
       settleTimeoutRef.current = null;
       act.endTurn();
-    }, 500);
+    }, TURN_SETTLE_DELAY);
   };
 
   const resolvePenaltyDraw = () => {
@@ -668,7 +689,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
       if (current.currentPlayer !== handViewIdx) return;
       if ((current.turnSerial ?? 0) !== turnToken) return;
       act.endTurn();
-    }, 500);
+    }, TURN_SETTLE_DELAY);
   });
 };
 
@@ -735,16 +756,6 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     (hasDrawnThisTurn || comboActive);
 
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
-  const selectedPlayable =
-    selectedCard !== null &&
-    isValidMove(
-      selectedCard,
-      top,
-      game.activeColor,
-      game.pendingDraw,
-      game.houseRules,
-      comboActive,
-    );
 
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
   const positions = seatLayout(game.players.length);
@@ -761,7 +772,6 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     : "radial-gradient(ellipse at center, hsl(140 60% 18%) 0%, hsl(140 60% 10%) 55%, #000 100%)";
 
   const toneFor = (idx: number): AvatarTone => {
-    if (idx === handViewIdx) return "viewer";
     if (idx === currentIdx) return "active";
     if (idx === upNextIdx && currentIdx !== idx) return "next";
     return "idle";
@@ -967,7 +977,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
                 idx={handViewIdx}
                 kind={viewerPlayer?.kind ?? "human"}
                 size="sm"
-                tone={myTurn ? "active" : "viewer"}
+                tone={myTurn ? "active" : "idle"}
               />
             </div>
             <span className="text-sm font-semibold truncate">
@@ -990,25 +1000,12 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
             ) : null}
 
             {comboActive && selectedId ? (
-              <>
-                <button
-                  onClick={confirmPlay}
-                  disabled={!selectedPlayable}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold active:scale-95 whitespace-nowrap shrink-0 ${
-                    selectedPlayable
-                      ? "bg-[hsl(140_70%_42%)] text-white shadow-lg"
-                      : "bg-[hsl(140_70%_28%)] text-white/60 cursor-not-allowed"
-                  }`}
-                >
-                  ✓ Play Card
-                </button>
-                <button
-                  onClick={handleCancelSelection}
-                  className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95 whitespace-nowrap shrink-0"
-                >
-                  Cancel
-                </button>
-              </>
+              <button
+                onClick={handleCancelSelection}
+                className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95 whitespace-nowrap shrink-0"
+              >
+                Cancel
+              </button>
             ) : canEndTurn && !selectedId ? (
               <button
                 onClick={onPass}
@@ -1158,6 +1155,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
           idx={currentIdx}
           variant={overlayKind}
           onReveal={() => {
+            setViewedPlayerIndex(currentIdx);
             setRevealed(true);
             setOverlayKind(null);
             sfx.ding();
@@ -1174,7 +1172,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 // ---------------------------------------------------------------------------
 // Sub-components (unchanged)
 // ---------------------------------------------------------------------------
-const tableGridStyle: React.CSSProperties = {
+const tableGridStyle: CSSProperties = {
   gridTemplateColumns: "minmax(60px, 1fr) 3fr minmax(60px, 1fr)",
   gridTemplateRows: "auto 1fr",
   minHeight: "260px",
@@ -1328,7 +1326,7 @@ function Modal({
 }: {
   title: string;
   onClose?: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-6">
@@ -1344,6 +1342,8 @@ function Modal({
     </div>
   );
 }
+
+
 
 
 
