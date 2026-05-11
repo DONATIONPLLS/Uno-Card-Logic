@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 const SEAT_COLORS = [
   "bg-[hsl(0_85%_50%)]",
   "bg-[hsl(48_100%_50%)] text-black",
@@ -32,22 +34,22 @@ export function Avatar({
 
   const effectiveTone: AvatarTone = tone ?? (glow ? "active" : "idle");
 
-  let toneClass = "border-white/20";
-  let toneStyle: React.CSSProperties = {};
+  let toneClass = "border-white/25";
+  let toneStyle: CSSProperties = {
+    boxShadow: "0 0 0 rgba(0,0,0,0)",
+  };
+
   if (effectiveTone === "active") {
-    toneClass = "border-[#22c55e] animate-pulse";
-    toneStyle = { boxShadow: "0 0 20px #22c55e" };
+    toneClass = "border-[#22c55e]";
+    toneStyle = { boxShadow: "0 0 20px rgba(34, 197, 94, 0.85)" };
   } else if (effectiveTone === "next") {
     toneClass = "border-[#f97316]";
-    toneStyle = { boxShadow: "0 0 15px #f97316" };
-  } else if (effectiveTone === "viewer") {
-    toneClass = "border-[#facc15]";
-    toneStyle = { boxShadow: "0 0 10px rgba(250, 204, 21, 0.55)" };
+    toneStyle = { boxShadow: "0 0 16px rgba(249, 115, 22, 0.75)" };
   }
 
   return (
     <div
-      className={`${dim} ${seatColor(idx)} rounded-full flex items-center justify-center font-black border-2 ${toneClass} relative`}
+      className={`${dim} ${seatColor(idx)} rounded-full flex items-center justify-center font-black border-2 relative transition-all duration-500 ease-in-out ${toneClass}`}
       style={toneStyle}
     >
       {initial}
