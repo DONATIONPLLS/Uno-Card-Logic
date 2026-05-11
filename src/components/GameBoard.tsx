@@ -755,7 +755,6 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     !swapPickerFor &&
     (hasDrawnThisTurn || comboActive);
 
-  const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
 
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
   const positions = seatLayout(game.players.length);
