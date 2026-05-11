@@ -563,8 +563,6 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   if (!actualPlayable) return;
 
-  const isNumberCard = (v: string) => /^[0-9]$/.test(v);
-
   // wild / color-pick cards use the wild color, not a special value check
   if (card.color === "wild") {
     setPickColorFor(selectedId);
