@@ -92,7 +92,17 @@ export function GameBoard({
   passAndPlay?: boolean;
 }) {
   const isPassAndPlay = passAndPlay ?? viewerIdx === undefined;
-  const handViewIdx = viewerIdx ?? game.currentPlayer;
+  const [viewedPlayerIndex, setViewedPlayerIndex] = useState<number>(
+    viewerIdx ?? game.currentPlayer,
+  );
+
+  useEffect(() => {
+    if (viewerIdx !== undefined) {
+      setViewedPlayerIndex(viewerIdx);
+    }
+  }, [viewerIdx]);
+
+  const handViewIdx = viewerIdx ?? viewedPlayerIndex;
   const flipMode = game.mode === "flip";
   const turnSerial = game.turnSerial ?? 0;
 
@@ -180,7 +190,7 @@ export function GameBoard({
               onComplete?.();
             }, 40);
           }
-        }, 520);
+        }, 500);
 
         count++;
         if (count < numCards) setTimeout(launchOne, 500);
@@ -392,8 +402,15 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
       prevTurnSerialRef.current = turnSerial;
       return;
     }
+
     if (isDrawing) return;
     if (prevTurnSerialRef.current === turnSerial) return;
+
+    const isAutoSkipping =
+      game.pendingDraw > 0 &&
+      game.pendingAction === null &&
+      !hasPlayableCard(game, currentIdx);
+
     prevTurnSerialRef.current = turnSerial;
     setSelectedId(null);
     setPickColorFor(null);
@@ -401,16 +418,31 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     setDrawArmed(false);
     setComboActive(false);
 
-    if (game.winner !== null) { setRevealed(true); setOverlayKind(null); return; }
+    if (game.winner !== null) {
+      setRevealed(true);
+      setOverlayKind(null);
+      return;
+    }
+
     const cur = game.players[currentIdx];
-    if (cur.kind === "bot") { setRevealed(true); setOverlayKind(null); return; }
+    if (cur.kind === "bot") {
+      setRevealed(true);
+      setOverlayKind(null);
+      return;
+    }
+
+    if (isAutoSkipping) return;
+
     const lastHuman = lastHumanRef.current;
     if (lastHuman === currentIdx) {
-      setRevealed(true); setOverlayKind(null); sfx.ding();
+      setRevealed(true);
+      setOverlayKind(null);
+      sfx.ding();
     } else {
-      setRevealed(false); setOverlayKind("pass");
+      setRevealed(false);
+      setOverlayKind("pass");
     }
-  }, [currentIdx, turnSerial, game.players, game.winner, isPassAndPlay, isDrawing]);
+  }, [currentIdx, turnSerial, game.players, game.winner, game.pendingDraw, game.pendingAction, isPassAndPlay, isDrawing]);
 
   useEffect(() => {
     if (revealed && currentPlayer?.kind === "human") {
@@ -533,51 +565,63 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     const card = game.hands[handViewIdx].find((c) => c.id === cardId);
     if (!card) return;
 
-    let playable: boolean;
-    if (comboActive) {
-      playable = isNumberCard(card.value) && card.value === top.value;
-      if (!game.houseRules.sameNumberCombo) playable = false;
-    } else {
-      playable = isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
-    }
+    const playable = isValidMove(
+      card,
+      top,
+      game.activeColor,
+      game.pendingDraw,
+      game.houseRules,
+      comboActive,
+    );
 
     setDrawArmed(false);
 
     if (!playable) {
-      sfx.click(); haptics.light(); setSelectedId(cardId); return;
+      sfx.click();
+      haptics.light();
+      setSelectedId(cardId);
+      return;
     }
     if (selectedId !== cardId) {
-      sfx.click(); haptics.light(); setSelectedId(cardId); return;
+      sfx.click();
+      haptics.light();
+      setSelectedId(cardId);
+      return;
     }
     confirmPlay();
   };
 
   const confirmPlay = () => {
-  if (!selectedId) return;
-  const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
-  if (!card) return;
+    if (!selectedId) return;
+    const card = game.hands[handViewIdx].find((c) => c.id === selectedId);
+    if (!card) return;
 
-  const actualPlayable = comboActive
-    ? isNumberCard(card.value) && card.value === top.value && game.houseRules.sameNumberCombo
-    : isValidMove(card, top, game.activeColor, game.pendingDraw, game.houseRules);
+    const actualPlayable = isValidMove(
+      card,
+      top,
+      game.activeColor,
+      game.pendingDraw,
+      game.houseRules,
+      comboActive,
+    );
 
-  if (!actualPlayable) return;
+    if (!actualPlayable) return;
 
-  // wild / color-pick cards use the wild color, not a special value check
-  if (card.color === "wild") {
-    setPickColorFor(selectedId);
-    return;
-  }
+    // wild / color-pick cards use the wild color, not a special value check
+    if (card.color === "wild") {
+      setPickColorFor(selectedId);
+      return;
+    }
 
-  const canContinueCombo = hasMatchingNumberInHand(game.hands[handViewIdx], card);
+    const canContinueCombo = hasMatchingNumberInHand(game.hands[handViewIdx], card);
 
-  captureOriginFor(selectedId);
-  sfx.swish();
-  haptics.medium();
-  act.play(selectedId);
-  setSelectedId(null);
-  setComboActive(canContinueCombo);
-};
+    captureOriginFor(selectedId);
+    sfx.swish();
+    haptics.medium();
+    act.play(selectedId);
+    setSelectedId(null);
+    setComboActive(canContinueCombo);
+  };
 
   const handlePickColor = (color: UnoColor) => {
     if (!pickColorFor) return;
@@ -591,12 +635,17 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   const onPass = () => {
     if (!myTurn || !revealed) return;
+
     if (settleTimeoutRef.current) {
       clearTimeout(settleTimeoutRef.current);
       settleTimeoutRef.current = null;
     }
+
     haptics.light();
-    act.endTurn();
+    settleTimeoutRef.current = setTimeout(() => {
+      settleTimeoutRef.current = null;
+      act.endTurn();
+    }, 500);
   };
 
   const resolvePenaltyDraw = () => {
@@ -688,9 +737,14 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   const selectedCard = selectedId ? myHand.find((c) => c.id === selectedId) ?? null : null;
   const selectedPlayable =
     selectedCard !== null &&
-    (comboActive
-      ? (isNumberCard(selectedCard.value) && selectedCard.value === top.value && game.houseRules.sameNumberCombo)
-      : isValidMove(selectedCard, top, game.activeColor, game.pendingDraw, game.houseRules));
+    isValidMove(
+      selectedCard,
+      top,
+      game.activeColor,
+      game.pendingDraw,
+      game.houseRules,
+      comboActive,
+    );
 
   const otherIdxs = game.players.map((_, i) => i).filter((i) => i !== handViewIdx);
   const positions = seatLayout(game.players.length);
@@ -985,9 +1039,14 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
                 const playable =
                   myTurn &&
                   !viewerIsBot &&
-                  (comboActive
-                    ? (c.color === top.color && c.value === top.value)
-                    : isValidMove(c, top, game.activeColor, game.pendingDraw, game.houseRules));
+                  isValidMove(
+                    c,
+                    top,
+                    game.activeColor,
+                    game.pendingDraw,
+                    game.houseRules,
+                    comboActive,
+                  );
                 const selected = selectedId === c.id;
                 return (
                   <motion.div
@@ -1285,4 +1344,6 @@ function Modal({
     </div>
   );
 }
+
+
 
