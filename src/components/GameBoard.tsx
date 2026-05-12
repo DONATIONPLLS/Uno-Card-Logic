@@ -1,3 +1,4 @@
+================================================
 // src/components/GameBoard.tsx
 import { useEffect, useRef, useState, useCallback, type CSSProperties, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -132,6 +133,7 @@ export function GameBoard({
   const seatRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const drawPileRef = useRef<HTMLDivElement | null>(null);
   const discardRef = useRef<HTMLDivElement | null>(null);
+  const handZoneRef = useRef<HTMLDivElement | null>(null);
   const pendingOriginRef = useRef<PendingOrigin | null>(null);
   const [flights, setFlights] = useState<Flight[]>([]);
   const [suppressedTopId, setSuppressedTopId] = useState<string | null>(null);
@@ -143,10 +145,18 @@ export function GameBoard({
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const syncComboActive = useCallback(
+    (next: boolean) => {
+      setComboActive((prev) => (prev === next ? prev : next));
+      setGame((g) => (g.comboActive === next ? g : { ...g, comboActive: next }));
+    },
+    [setGame],
+  );
+
   // Real startDrawAnimation (not a placeholder)
   const startDrawAnimation = useCallback(
     (playerIdx: number, numCards: number, onComplete?: () => void) => {
-      if (isDrawing) return;
+      if (isDrawing || comboActive) return;
       setIsDrawing(true);
       if (botTimeoutRef.current) clearTimeout(botTimeoutRef.current);
 
@@ -158,11 +168,18 @@ export function GameBoard({
         if (!src) return;
         const sRect = src.getBoundingClientRect();
 
-        const seat = seatRefs.current[playerIdx];
-        if (!seat) return;
-        const seatRect = seat.getBoundingClientRect();
-        const endX = seatRect.left + seatRect.width / 2;
-        const endY = seatRect.top + seatRect.height / 2;
+        let endX: number, endY: number;
+        if (playerIdx === handViewIdx && handZoneRef.current) {
+          const hz = handZoneRef.current.getBoundingClientRect();
+          endX = hz.left + hz.width / 2;
+          endY = hz.top + hz.height / 2;
+        } else {
+          const seat = seatRefs.current[playerIdx];
+          if (!seat) return;
+          const seatRect = seat.getBoundingClientRect();
+          endX = seatRect.left + seatRect.width / 2;
+          endY = seatRect.top + seatRect.height / 2;
+        }
 
         const flightId = `draw-${playerIdx}-${Date.now()}-${currentIndex}`;
         const placeholderCard: UnoCard = { id: flightId, color: "wild", value: "wild" };
@@ -191,7 +208,7 @@ export function GameBoard({
       };
       launchOne();
     },
-    [handViewIdx, isDrawing, setFlights, setGame],
+    [handViewIdx, isDrawing, comboActive, setFlights, setGame],
   );
 
   const processBotTurn = useCallback(() => {
@@ -204,7 +221,7 @@ export function GameBoard({
     if (move.type === "draw") {
       const toDraw = g.pendingDraw > 0 ? g.pendingDraw : 1;
       const isPenaltyDraw = g.pendingDraw > 0;
-      setComboActive(false);
+      syncComboActive(false);
       if (isPenaltyDraw) {
         startDrawAnimation(g.currentPlayer, toDraw, () => {
           if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
@@ -240,7 +257,7 @@ export function GameBoard({
         !!chosenCard &&
         hasMatchingNumberInHand(g.hands[g.currentPlayer], chosenCard);
       setGame((prev) => playCard(prev, prev.currentPlayer, move.cardId, move.chosenColor, comboActive));
-      setComboActive(holdForCombo);
+      syncComboActive(holdForCombo);
       if (!holdForCombo) {
         botTimeoutRef.current = setTimeout(() => {
           setGame((prev) => endTurn(prev, prev.currentPlayer));
@@ -282,7 +299,7 @@ export function GameBoard({
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
-    setComboActive(false);
+    syncComboActive(false);
   }, [turnSerial, game.pendingAction, game.winner]);
 
   // ── Card flight animations (play only) ──
@@ -429,7 +446,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
-    setComboActive(false);
+    syncComboActive(false);
 
     if (game.winner !== null) {
       setRevealed(true);
@@ -547,7 +564,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     setPickColorFor(null);
     setHasDrawnThisTurn(false);
     setDrawArmed(false);
-    setComboActive(false);
+    syncComboActive(false);
   }, [currentIdx, turnSerial, isPassAndPlay]);
 
   const captureOriginFor = (cardId: string) => {
@@ -633,7 +650,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     haptics.medium();
     act.play(selectedId, undefined, comboActive);
     setSelectedId(null);
-    setComboActive(canContinueCombo);
+    syncComboActive(canContinueCombo);
   };
 
   const handlePickColor = (color: UnoColor) => {
@@ -643,7 +660,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
     act.play(pickColorFor, color, comboActive);
     setPickColorFor(null);
     setSelectedId(null);
-    setComboActive(false); // color pick ends combo possibility
+    syncComboActive(false); // color pick ends combo possibility
   };
 
   const onPass = () => {
@@ -668,7 +685,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
   setSelectedId(null);
   setDrawArmed(false);
   setHasDrawnThisTurn(true);
-  setComboActive(false);
+  syncComboActive(false);
 
   const cardsToDraw = game.pendingDraw > 0 ? game.pendingDraw : 1;
   const turnToken = turnSerial;
@@ -687,6 +704,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   const onDrawPileTap = () => {
   if (!myTurn || !revealed || viewerIsBot || game.pendingAction !== null) return;
+  if (comboActive) return;
   if (isDrawing) return;
 
   if (game.pendingDraw > 0) {
@@ -714,7 +732,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   setDrawArmed(false);
   setHasDrawnThisTurn(true);
-  setComboActive(false);
+  syncComboActive(false);
   startDrawAnimation(handViewIdx, 1);
 };
 
@@ -770,6 +788,10 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
 
   const darkSide = game.gameSide === "dark";
   const backDarkSide = flipMode ? !darkSide : false;
+  const drawPileLabel =
+    game.pendingDraw > 0 && drawArmed
+      ? `Draw ${game.pendingDraw}`
+      : `Draw (${game.drawPile.length})`;
 
   return (
     <div
@@ -880,7 +902,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
           onClick={() => { setSelectedId(null); setDrawArmed(false); }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); onDrawPileTap(); }}
+            onClick={(e) => { e.stopPropagation(); if (comboActive) return; onDrawPileTap(); }}
             disabled={
               !myTurn ||
               !revealed ||
@@ -913,15 +935,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
               />
             </div>
             <span className="text-[10px] text-white/70">
-              {game.pendingDraw > 0
-                ? drawArmed
-                  ? `Draw ${game.pendingDraw}`
-                  : `Draw (${game.drawPile.length})`
-                : hasDrawnThisTurn
-                  ? "Drew"
-                  : drawArmed
-                    ? "Tap again"
-                    : "Draw"} ({game.drawPile.length})
+              {drawPileLabel}
             </span>
           </button>
 
@@ -968,7 +982,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
                 idx={handViewIdx}
                 kind={viewerPlayer?.kind ?? "human"}
                 size="sm"
-                tone={toneFor(handViewIdx)}
+                tone={myTurn ? "active" : "idle"}
               />
             </div>
             <span className="text-sm font-semibold truncate">
@@ -1007,7 +1021,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
             ) : selectedId ? (
               <button
                 onClick={handleCancelSelection}
-                className="px-3 py-2 rounded-xl text-sm font-semibold text-white/80 bg-white/10 active:scale-95 whitespace-nowrap shrink-0"
+                className="px-3 py-1.5 rounded-md text-xs text-white/70 bg-white/10 whitespace-nowrap shrink-0"
               >
                 Cancel
               </button>
@@ -1016,6 +1030,7 @@ const c: UnoColor | "white" = topColor === "wild" ? game.activeColor : topColor;
         </div>
 
         <div
+          ref={handZoneRef}
           className="px-3 scroll-smooth"
           style={{ overflowX: "auto", overflowY: "visible", paddingTop: "2.5rem" }}
         >
