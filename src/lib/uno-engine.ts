@@ -1,3 +1,4 @@
+================================================
 export type UnoColor = "red" | "yellow" | "green" | "blue" | "pink" | "teal" | "orange" | "purple";
 
 export type WildColor = UnoColor | "wild";
@@ -213,6 +214,7 @@ export interface GameState {
   skipNext: boolean;
   flipMap: Record<string, UnoCard>; //new
   queuedSkipNext: boolean;   // <-- add this
+  comboActive?: boolean;
   turnSerial?: number;
 }
 
@@ -273,14 +275,20 @@ export function isValidMove(
   rules: HouseRules,
   comboActive = false,
 ): boolean {
-  // Same Number Combo is locked down completely while the chain is active.
-  // The only legal follow-up is an exact matching number card.
-  if (comboActive) {
-    return isNumberCard(card.value) && card.value === topCard.value;
-  }
-
   // ── All-Wild mode: every card plays on everything ──
   if (rules.allWild) return true;
+
+  // Same Number Combo takes priority when the combo chain is active.
+  // Any number card with the same value is allowed, regardless of color.
+  if (
+    comboActive &&
+    rules.sameNumberCombo &&
+    isNumberCard(card.value) &&
+    isNumberCard(topCard.value) &&
+    card.value === topCard.value
+  ) {
+    return true;
+  }
 
   // ── Pending draw: only stacking moves are legal ──
   if (pendingDraw > 0) {
@@ -372,6 +380,7 @@ export function dealNewGame(opts: NewGameOptions): GameState {
     skipNext: false,
     flipMap,
     queuedSkipNext: false,
+    comboActive: false,
     turnSerial: 0,
   };
 }
@@ -399,6 +408,7 @@ export function describe(c: UnoCard): string {
 
 export function drawCards(state: GameState, playerIdx: number, n: number): GameState {
   const s = cloneState(state);
+  if (s.comboActive) return s;
   for (let i = 0; i < n; i++) {
     if (s.drawPile.length === 0) {
       const top = s.discardPile.pop()!;
@@ -549,7 +559,7 @@ export function hasPlayableCard(state: GameState, playerIdx: number): boolean {
 
 export function drawOne(state: GameState, playerIdx: number): GameState {
   let s = cloneState(state);
-  if (s.winner !== null || s.pendingAction !== null) return s;
+  if (s.winner !== null || s.pendingAction !== null || s.comboActive) return s;
   if (playerIdx !== s.currentPlayer) return s;
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
@@ -564,7 +574,7 @@ export function drawOne(state: GameState, playerIdx: number): GameState {
  */
 export function drawSingle(state: GameState, playerIdx: number): GameState {
   const s = cloneState(state);
-  if (s.winner !== null || s.pendingAction !== null) return s;
+  if (s.winner !== null || s.pendingAction !== null || s.comboActive) return s;
   if (playerIdx !== s.currentPlayer) return s;
 
   // Reshuffle if needed
@@ -618,7 +628,7 @@ export function endTurn(state: GameState, playerIdx: number): GameState {
 export function drawPenaltyThenEnd(state: GameState, playerIdx: number): GameState {
   // Draw the required cards (same logic as drawOne but we force endTurn)
   let s = cloneState(state);
-  if (s.winner !== null || s.pendingAction !== null || playerIdx !== s.currentPlayer) return s;
+  if (s.winner !== null || s.pendingAction !== null || s.comboActive || playerIdx !== s.currentPlayer) return s;
 
   const drawn = Math.max(1, s.pendingDraw);
   s = drawCards(s, playerIdx, drawn);
@@ -734,6 +744,7 @@ export function cloneState(s: GameState): GameState {
     queuedSkipNext: s.queuedSkipNext,   // only once
     turnSerial: s.turnSerial ?? 0,
     flipMap: { ...s.flipMap },
+    comboActive: s.comboActive ?? false,
   };
  }
 
